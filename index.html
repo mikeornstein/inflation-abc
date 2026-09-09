@@ -142,7 +142,7 @@
           Scrub: WASM SIMD lerp of a load-time Chiron pressure ladder (default ΔP=2000 Pa) · <a class="dim" href="docs/PRESSURE-LADDER.md">docs/PRESSURE-LADDER.md</a> · <code>?live=1</code> forces per-step CPU settle<br/>
           Extra: owned torus bake (not SVG/presets) · density swaps prebaked JSON · <a class="dim" href="docs/ARBITRARY-GEOMETRY.md">docs/ARBITRARY-GEOMETRY.md</a>
         </p>
-        <p class="meta">Upload bake JSON (same schema as letter/torus bakes). STL/STEP remesh is the CLI path (<code>tools/bake_quad.py</code> + QuadriFlow), not in-browser.</p>
+        <p class="meta">Upload bake JSON (same schema as letter/torus bakes). STL/STEP remesh is the CLI path (<code>tools/bake_quad.py --step|--stl</code>; QuadriFlow if present), not in-browser.</p>
         <input type="file" id="bakeFile" accept="application/json,.json" />
         <details>
           <summary>Geometry limits</summary>
