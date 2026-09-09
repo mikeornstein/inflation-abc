@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hyperelastic ABC — DynaPuff Bold · 5 cm block → inflate</title>
+<style>
+  :root { color-scheme: dark; font-family: ui-rounded, system-ui, sans-serif; }
+  body { margin: 0; background: #12141a; color: #d8dde8; }
+  #wrap { display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 10px 14px; border-bottom: 1px solid #2a3140; font-size: 13px; }
+  header strong { color: #9ec5ff; }
+  #main { flex: 1; display: grid; grid-template-columns: 1fr 300px; min-height: 0; }
+  canvas { width: 100%; height: 100%; display: block; background: #07080c; }
+  aside { border-left: 1px solid #2a3140; padding: 12px; font-size: 12px; overflow: auto; }
+  label { display: block; margin: 10px 0 4px; color: #9aa3b5; }
+  input[type=range] { width: 100%; }
+  .val { font-variant-numeric: tabular-nums; color: #e8ecf4; }
+  .warn { color: #ffb454; font-weight: 600; }
+  .ok { color: #7dcea0; }
+  .meta { color: #7a8499; margin-top: 12px; line-height: 1.45; }
+  code { background: #1c2230; padding: 1px 4px; border-radius: 3px; }
+  button { background:#1c2230; color:#d8dde8; border:1px solid #3a4558; border-radius:6px; padding:6px 10px; cursor:pointer; width:100%; margin-top:6px; }
+  button:disabled { opacity:0.5; }
+  .letter-row { display:flex; gap:6px; margin: 6px 0 4px; }
+  .letter-row button { flex:1; font-weight:700; font-size:15px; letter-spacing:0.04em; }
+  .letter-row button.active { background:#2a4060; border-color:#6a9de8; color:#cfe2ff; }
+  a.dim { color:#8eb4ef; }
+  #meshDiagBanner {
+    position: absolute; left: 12px; top: 52px; z-index: 5;
+    background: rgba(8,10,16,0.82); border: 1px solid #5a3040;
+    color: #ffc9c9; font: 12px/1.45 ui-monospace, monospace;
+    padding: 8px 10px; border-radius: 6px; max-width: 42ch;
+    display: none; pointer-events: none;
+  }
+  #meshDiagBanner strong { color: #ff7a7a; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <strong>Inflation Sim · ABC</strong> — DynaPuff Bold (SIL OFL) → <em>5 cm hollow block shell</em> → bubbly inflate · neo-Hookean · local only
+  </header>
+  <div id="main">
+    <canvas id="c"></canvas>
+    <div id="meshDiagBanner"></div>
+    <aside>
+      <label>Letter</label>
+      <div class="letter-row" id="letterRow">
+        <button type="button" data-letter="A" class="active">A</button>
+        <button type="button" data-letter="B">B</button>
+        <button type="button" data-letter="C">C</button>
+      </div>
+      <label>Pressure <span class="val" id="pVal">0</span> Pa</label>
+      <input type="range" id="pSlider" min="0" max="80000" step="50" value="0" />
+      <label>Auto-max (first warn)</label>
+      <button id="btnAuto" type="button">Set slider max from warn</button>
+      <p>λ<sub>max</sub>: <span id="lam" class="val">1.00</span></p>
+      <p>Status: <span id="st" class="ok">in range</span></p>
+      <p>Solve: <span id="solve" class="warn">CPU settle · WebGL film</span></p>
+      <p>Last step: <span id="stepMs" class="val">—</span></p>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" /> Thin wireframe overlay</label>
+      <p class="meta">
+        Pipeline: <code>DynaPuff Bold</code> (SIL OFL 1.1) → extrude <code>5 cm</code> block → inflate<br/>
+        Letter height <code>12 cm</code> · extrusion depth <code id="depthLabel">0.05 m</code> · h<sub>0</sub> <code>0.381 mm</code><br/>
+        μ = <code id="muShow"></code> Pa (grill eng. · not datasheet)<br/>
+        Mesh: <code id="meshLabel">—</code><br/>
+        Hollow film shell (faces + walls · not solid brick) · denser near bends/corners/holes · opacity from local film thickness h=H₀/(λ₁λ₂)<br/>
+        Film: IOR <code>1.53</code> estimate · Semi-Clear White · soft industrial gloss<br/>
+        Same NH + wrinkle clamp + λ≥2 warn · warn stills stop at <strong>first λ≥2</strong><br/>
+        Bar: <a class="dim" href="design/BLOCK-LETTER-BAR.md">design/BLOCK-LETTER-BAR.md</a><br/>
+        Default: meshes/A.json · quadmem ON · No public page until Pages enabled
+      </p>
+    </aside>
+  </div>
+</div>
+<script src="design/earcut.min.js"></script>
+<script src="design/glyphs-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
