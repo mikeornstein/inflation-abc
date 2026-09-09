@@ -6,13 +6,28 @@
 <title>Inflation Sim</title>
 <style>
   :root { color-scheme: dark; font-family: ui-rounded, system-ui, sans-serif; }
-  body { margin: 0; background: #12141a; color: #d8dde8; }
-  #wrap { display: flex; flex-direction: column; height: 100vh; }
-  header { padding: 10px 14px; border-bottom: 1px solid #2a3140; font-size: 13px; }
+  body { margin: 0; background: #12141a; color: #d8dde8; overflow: hidden; }
+  #wrap { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  header { padding: 10px 14px; border-bottom: 1px solid #2a3140; font-size: 13px; flex: 0 0 auto; }
   header strong { color: #9ec5ff; }
-  #main { flex: 1; display: grid; grid-template-columns: 1fr 300px; min-height: 0; }
-  canvas { width: 100%; height: 100%; display: block; background: #07080c; touch-action: none; }
-  aside { border-left: 1px solid #2a3140; padding: 12px; font-size: 12px; overflow: auto; }
+  #main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-areas: "stage aside";
+    min-height: 0;
+  }
+  #stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; }
+  canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block; background: #07080c; touch-action: none;
+  }
+  aside {
+    grid-area: aside;
+    border-left: 1px solid #2a3140;
+    padding: 12px; font-size: 12px; overflow: auto; min-width: 0;
+  }
   label { display: block; margin: 10px 0 4px; color: #9aa3b5; }
   input[type=range] { width: 100%; }
   #wireToggleLabel { cursor: pointer; user-select: none; }
@@ -32,13 +47,46 @@
   .letter-row button.active { background:#2a4060; border-color:#6a9de8; color:#cfe2ff; }
   a.dim { color:#8eb4ef; }
   #meshDiagBanner {
-    position: absolute; left: 12px; top: 52px; z-index: 5;
+    position: absolute; left: 12px; top: 12px; z-index: 5;
     background: rgba(8,10,16,0.82); border: 1px solid #5a3040;
     color: #ffc9c9; font: 12px/1.45 ui-monospace, monospace;
     padding: 8px 10px; border-radius: 6px; max-width: 42ch;
     display: none; pointer-events: none;
   }
   #meshDiagBanner strong { color: #ff7a7a; }
+  /* Portrait / narrow: canvas on top (majority), full-width controls below. */
+  @media (max-width: 700px) {
+    #main {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(50vh, 1fr) auto;
+      grid-template-rows: minmax(50dvh, 1fr) auto;
+      grid-template-areas:
+        "stage"
+        "aside";
+    }
+    aside {
+      border-left: none;
+      border-top: 1px solid #2a3140;
+      max-height: 40vh;
+      max-height: 40dvh;
+      -webkit-overflow-scrolling: touch;
+    }
+    .letter-row button { min-height: 44px; font-size: 16px; }
+    input[type=range] { min-height: 32px; }
+  }
+  /* Narrow landscape: keep a split so the letter still gets ≥50% width. */
+  @media (max-width: 700px) and (orientation: landscape) {
+    #main {
+      grid-template-columns: minmax(50%, 1fr) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      grid-template-areas: "stage aside";
+    }
+    aside {
+      border-left: 1px solid #2a3140;
+      border-top: none;
+      max-height: none;
+    }
+  }
 </style>
 </head>
 <body>
@@ -47,8 +95,10 @@
     <strong>Inflation Sim</strong>
   </header>
   <div id="main">
-    <canvas id="c"></canvas>
-    <div id="meshDiagBanner"></div>
+    <div id="stage">
+      <canvas id="c"></canvas>
+      <div id="meshDiagBanner"></div>
+    </div>
     <aside>
       <label>Letter</label>
       <div class="letter-row" id="letterRow">
@@ -1523,6 +1573,7 @@ if(!gl){ document.body.insertAdjacentHTML("beforeend","<p style='color:#ffb454;p
 
 function resize(){const dpr=devicePixelRatio||1; canvas.width=Math.max(1,canvas.clientWidth*dpr); canvas.height=Math.max(1,canvas.clientHeight*dpr); gl.viewport(0,0,canvas.width,canvas.height);}
 window.addEventListener("resize", resize); resize();
+if(window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
 
 const vs=`#version 300 es
 layout(location=0) in vec3 aPos;
