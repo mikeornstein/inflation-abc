@@ -23,6 +23,10 @@ Default loads `meshes/A.json` (N=1554 orphan28) with quadmem ON. Opt out: `?quad
 | `?quadmem=0` | Tri-split fallback/debug |
 | `?wire=1` | Wire overlay |
 | `?still=1&beauty=1&ramptowarn=1` | Capture still path |
+| `?live=1` | Per-step CPU settle (skip WASM ladder) |
+| `?dP=2000` | Ladder spacing in Pa (default 2000) |
+
+Pressure scrub: load-time Chiron ladder + WASM SIMD lerp (`docs/PRESSURE-LADDER.md`).
 
 ## Locks
 - μ = grill eng. (not invented)
@@ -32,6 +36,7 @@ Default loads `meshes/A.json` (N=1554 orphan28) with quadmem ON. Opt out: `?quad
 - B/C: meshes included; Design stills held
 
 ## Docs
+- `docs/PRESSURE-LADDER.md`
 - `docs/2026-09-07-quadmem-A-ship-clear.md`
 - `docs/DEFAULT-QUADMEM.md`
 - `meshes/A-LOCK.md`

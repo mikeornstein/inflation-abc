@@ -6,5 +6,6 @@
 - [x] Bake overwrite protected (`meshes/A-LOCK.md` / bake `--force`)
 - [x] Quality: Chiron 1–10 + shipOk + Design post-pforce warn PASS
 - [x] Lean publish tree (no `.venv`, no archive-dense, no bak)
-- [ ] Public Pages URL
+- [x] Public Pages URL
+- [x] Silky pressure scrub (WASM SIMD lerp of load-time Chiron ladder, ORN-49)
 - [ ] CloudAgent on repo
