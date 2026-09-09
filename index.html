@@ -11,7 +11,7 @@
   header { padding: 10px 14px; border-bottom: 1px solid #2a3140; font-size: 13px; }
   header strong { color: #9ec5ff; }
   #main { flex: 1; display: grid; grid-template-columns: 1fr 300px; min-height: 0; }
-  canvas { width: 100%; height: 100%; display: block; background: #07080c; }
+  canvas { width: 100%; height: 100%; display: block; background: #07080c; touch-action: none; }
   aside { border-left: 1px solid #2a3140; padding: 12px; font-size: 12px; overflow: auto; }
   label { display: block; margin: 10px 0 4px; color: #9aa3b5; }
   input[type=range] { width: 100%; }
@@ -60,6 +60,8 @@
       <p>Solve: <span id="solve" class="warn">CPU settle · WebGL film</span></p>
       <p>Last step: <span id="stepMs" class="val">—</span></p>
       <label style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" /> Thin wireframe overlay</label>
+      <button id="btnResetCam" type="button">Reset camera</button>
+      <p class="meta" style="margin-top:6px">Canvas: drag orbit · shift/right-drag pan · wheel/pinch zoom</p>
       <p class="meta">
         Pipeline: <code>DynaPuff Bold</code> (SIL OFL 1.1) → extrude <code>5 cm</code> block → inflate<br/>
         Letter height <code>12 cm</code> · extrusion depth <code id="depthLabel">0.05 m</code> · h<sub>0</sub> <code>0.381 mm</code><br/>
@@ -1626,15 +1628,73 @@ function uploadMesh(){
   gl.bindBuffer(gl.ARRAY_BUFFER, bufSeam); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(seamW), gl.DYNAMIC_DRAW);
 }
 
-let rotY=0.42, rotX=0.06, dragging=false, lx=0, ly=0;
-if(new URLSearchParams(location.search).get("beauty")==="1"){ rotY=0.42; rotX=0.06; } // Mike: upright in viewport (not tipped on ground)
-canvas.addEventListener("pointerdown", e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
-canvas.addEventListener("pointerup", ()=>dragging=false);
-canvas.addEventListener("pointermove", e=>{
-  if(!dragging) return;
-  rotY+=(e.clientX-lx)*0.01; rotX=Math.max(-1.2,Math.min(1.2,rotX+(e.clientY-ly)*0.01));
-  lx=e.clientX; ly=e.clientY;
+// Viewport camera — extend the existing spherical lookAt (no second control stack).
+// Listeners stay on the canvas so pressure scrub / aside UI are untouched.
+const CAM0={rotY:0.42, rotX:0.06, dist:0.42, target:[0,0,0]};
+const CAM_DIST_MIN=0.08, CAM_DIST_MAX=2.4, CAM_PITCH=Math.PI/2-0.05;
+let rotY=CAM0.rotY, rotX=CAM0.rotX, eyeDist=CAM0.dist, camTarget=CAM0.target.slice();
+const camPointers=new Map();
+let camDrag="orbit", lx=0, ly=0, pinch0=CAM0.dist, pinchDist0=1;
+function resetCamera(){ rotY=CAM0.rotY; rotX=CAM0.rotX; eyeDist=CAM0.dist; camTarget=CAM0.target.slice(); }
+if(new URLSearchParams(location.search).get("beauty")==="1") resetCamera(); // Mike: upright in viewport (not tipped on ground)
+function camEye(){
+  const c=Math.cos(rotX);
+  return [
+    camTarget[0]+Math.sin(rotY)*c*eyeDist,
+    camTarget[1]+Math.sin(rotX)*eyeDist,
+    camTarget[2]+Math.cos(rotY)*c*eyeDist
+  ];
+}
+function panCamera(dx, dy){
+  const eye=camEye(), z=nrm(sub(eye, camTarget)), x=nrm(cross([0,1,0], z)), y=cross(z, x);
+  const k=eyeDist*2/Math.max(1, canvas.clientHeight);
+  camTarget=[camTarget[0]-dx*k*x[0]+dy*k*y[0], camTarget[1]-dx*k*x[1]+dy*k*y[1], camTarget[2]-dx*k*x[2]+dy*k*y[2]];
+}
+function isPanGesture(e){ return !!(e.shiftKey || e.altKey || e.button===1 || e.button===2 || (e.buttons&6)); }
+function camEndPointer(e){
+  camPointers.delete(e.pointerId);
+  if(camPointers.size===1){ const p=[...camPointers.values()][0]; camDrag="orbit"; lx=p.x; ly=p.y; }
+}
+canvas.addEventListener("pointerdown", e=>{
+  if(e.target!==canvas) return;
+  canvas.setPointerCapture(e.pointerId);
+  camPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(camPointers.size>=2){
+    const pts=[...camPointers.values()];
+    pinchDist0=Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y)||1;
+    pinch0=eyeDist;
+    camDrag="pinch";
+  } else {
+    camDrag=isPanGesture(e)?"pan":"orbit";
+    lx=e.clientX; ly=e.clientY;
+  }
 });
+canvas.addEventListener("pointerup", camEndPointer);
+canvas.addEventListener("pointercancel", camEndPointer);
+canvas.addEventListener("lostpointercapture", e=>{ camPointers.delete(e.pointerId); });
+canvas.addEventListener("pointermove", e=>{
+  if(!camPointers.has(e.pointerId)) return;
+  camPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(camPointers.size>=2){
+    const pts=[...camPointers.values()];
+    const d=Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y)||1;
+    eyeDist=clamp(pinch0*(pinchDist0/d), CAM_DIST_MIN, CAM_DIST_MAX);
+    return;
+  }
+  const dx=e.clientX-lx, dy=e.clientY-ly;
+  lx=e.clientX; ly=e.clientY;
+  if(camDrag==="pan" || e.shiftKey) panCamera(dx, dy);
+  else { rotY+=dx*0.01; rotX=clamp(rotX+dy*0.01, -CAM_PITCH, CAM_PITCH); }
+});
+canvas.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const dy=e.deltaMode===1?e.deltaY*16:e.deltaMode===2?e.deltaY*Math.max(1,canvas.clientHeight):e.deltaY;
+  eyeDist=clamp(eyeDist*Math.exp(dy*0.0015), CAM_DIST_MIN, CAM_DIST_MAX);
+}, {passive:false});
+canvas.addEventListener("contextmenu", e=>{ e.preventDefault(); });
+canvas.addEventListener("dblclick", e=>{ e.preventDefault(); resetCamera(); });
+const btnResetCam=document.getElementById("btnResetCam");
+if(btnResetCam) btnResetCam.addEventListener("click", resetCamera);
 
 function matMul(a,b){const o=new Float32Array(16); for(let c=0;c<4;c++)for(let r=0;r<4;r++) o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3]; return o;}
 function perspective(fovy,aspect,near,far){const f=1/Math.tan(fovy/2),nf=1/(near-far); const m=new Float32Array(16); m[0]=f/aspect;m[5]=f;m[10]=(far+near)*nf;m[11]=-1;m[14]=2*far*near*nf; return m;}
@@ -1939,9 +1999,8 @@ function frame(){
     }
   } else if(stillMode){ energy(); }
   uploadMesh();
-  const eyeDist=0.42;
-  const eye=[Math.sin(rotY)*Math.cos(rotX)*eyeDist, Math.sin(rotX)*eyeDist, Math.cos(rotY)*Math.cos(rotX)*eyeDist];
-  const vp=matMul(perspective(0.85, canvas.width/Math.max(1,canvas.height), 0.015, 5), lookAt(eye,[0,0,0],[0,1,0]));
+  const eye=camEye();
+  const vp=matMul(perspective(0.85, canvas.width/Math.max(1,canvas.height), 0.008, 8), lookAt(eye,camTarget,[0,1,0]));
   gl.useProgram(prog);
   gl.uniformMatrix4fv(uVP,false,vp); gl.uniform3f(uEye,eye[0],eye[1],eye[2]);
   gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.enable(gl.BLEND);
