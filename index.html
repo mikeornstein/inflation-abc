@@ -58,8 +58,8 @@
   @media (max-width: 700px) {
     #main {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(50vh, 1fr) auto;
-      grid-template-rows: minmax(50dvh, 1fr) auto;
+      grid-template-rows: minmax(50vh, 1fr) minmax(0, 40vh);
+      grid-template-rows: minmax(50dvh, 1fr) minmax(0, 40dvh);
       grid-template-areas:
         "stage"
         "aside";
@@ -67,8 +67,10 @@
     aside {
       border-left: none;
       border-top: 1px solid #2a3140;
+      min-height: 0;
       max-height: 40vh;
       max-height: 40dvh;
+      overflow: auto;
       -webkit-overflow-scrolling: touch;
     }
     .letter-row button { min-height: 44px; font-size: 16px; }
@@ -108,13 +110,13 @@
       </div>
       <label>Pressure <span class="val" id="pVal">0</span> Pa</label>
       <input type="range" id="pSlider" min="0" max="80000" step="50" value="0" />
+      <label id="wireToggleLabel" style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" autocomplete="off" /> Thin wireframe overlay</label>
+      <button id="btnResetCam" class="secondary" type="button">Reset camera</button>
+      <p class="meta" style="margin-top:6px">Canvas: drag orbit · shift/right-drag pan · wheel/pinch zoom</p>
       <button id="btnAuto" class="secondary" type="button">Match slider to first warning</button>
       <p>λ<sub>max</sub>: <span id="lam" class="val">1.00</span></p>
       <p>Status: <span id="st" class="ok">in range</span></p>
       <p>Solve: <span id="solve" class="warn">CPU settle · WebGL film</span></p>
-      <label id="wireToggleLabel" style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" autocomplete="off" /> Thin wireframe overlay</label>
-      <button id="btnResetCam" class="secondary" type="button">Reset camera</button>
-      <p class="meta" style="margin-top:6px">Canvas: drag orbit · shift/right-drag pan · wheel/pinch zoom</p>
       <details class="lab">
         <summary>Details</summary>
         <p>Last step: <span id="stepMs" class="val">—</span></p>
