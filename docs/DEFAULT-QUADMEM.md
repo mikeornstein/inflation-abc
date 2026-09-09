@@ -4,4 +4,4 @@
 
 **Opt out:** `?quadmem=0` — tri-split fallback/debug only.
 
-Gates that cleared the flip: Chiron 1–10 allPass (`perf/quad-correctness-A.json`) + Design re-PASS post pressure ∂V fix.
+Gates that cleared the flip: Chiron 1–10 allPass (`perf/quad-correctness-A.json`) + Design re-PASS post pressure →V fix.
