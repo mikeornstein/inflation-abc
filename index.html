@@ -1538,8 +1538,8 @@ float fresnel(float c, float ior){ float r0=pow((1.0-ior)/(1.0+ior),2.0); float 
 void main(){
   vec3 n=vN; float nlen=length(n);
   n=nlen>1e-6 ? n/nlen : vec3(0.0, 0.0, 1.0);
+  if(!gl_FrontFacing) n=-n;
   vec3 V=normalize(vEye-vW);
-  if(dot(n,V)<0.0) n=-n;
   vec3 L=normalize(uLight); vec3 H=normalize(L+V);
   float NdotV=max(dot(n,V),0.0), NdotL=max(dot(n,L),0.0), NdotH=max(dot(n,H),0.0);
   float F=fresnel(NdotV,uIOR);
@@ -1555,7 +1555,8 @@ void main(){
   vec3 base=mix(transmit, tint*0.70, milk*0.42);
   // soft industrial gloss — no painted seam/edge chrome
   float gloss=pow(NdotH, 26.0)*F*0.40 + pow(NdotH, 8.0)*0.11;
-  vec3 col=base*(0.30+0.50*NdotL)*(1.0-F*0.62) + vec3(gloss);
+  float facing=pow(NdotV, 1.35);
+  vec3 col=base*(0.22+0.42*NdotL+0.28*facing)*(1.0-F*0.62) + vec3(gloss);
   float alpha=clamp(alphaCore*mix(0.85, 1.15, F), 0.08, 0.60);
   o=vec4(col, alpha);
 }`;
@@ -1586,7 +1587,7 @@ void main(){
 const wireFs=`#version 300 es
 precision highp float;
 out vec4 o;
-void main(){ o=vec4(0.72,0.78,0.88,0.35); }`;
+void main(){ o=vec4(0.88,0.92,0.98,1.0); }`;
 const freeFs=`#version 300 es
 precision highp float;
 out vec4 o;
@@ -1700,6 +1701,7 @@ function uploadMesh(){
     gIdx[t*3]=ia<0?0:ia; gIdx[t*3+1]=ib<0?0:ib; gIdx[t*3+2]=ic<0?0:ic;
   }
   drawIdx=gIdx;
+  window.__SHADE__={nG, N, nSplit:nG-N};
   gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawPos); gl.bufferData(gl.ARRAY_BUFFER, gPos, gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawNrm); gl.bufferData(gl.ARRAY_BUFFER, gNrm, gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawSeam); gl.bufferData(gl.ARRAY_BUFFER, gTh, gl.DYNAMIC_DRAW);
