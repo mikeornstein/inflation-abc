@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Hyperelastic ABC — DynaPuff Bold · 5 cm block → inflate</title>
+<title>Inflation Sim</title>
 <style>
   :root { color-scheme: dark; font-family: ui-rounded, system-ui, sans-serif; }
   body { margin: 0; background: #12141a; color: #d8dde8; }
@@ -20,10 +20,13 @@
   .val { font-variant-numeric: tabular-nums; color: #e8ecf4; }
   .warn { color: #ffb454; font-weight: 600; }
   .ok { color: #7dcea0; }
-  .meta { color: #7a8499; margin-top: 12px; line-height: 1.45; }
+  .meta { color: #7a8499; margin-top: 8px; line-height: 1.45; }
   code { background: #1c2230; padding: 1px 4px; border-radius: 3px; }
   button { background:#1c2230; color:#d8dde8; border:1px solid #3a4558; border-radius:6px; padding:6px 10px; cursor:pointer; width:100%; margin-top:6px; }
   button:disabled { opacity:0.5; }
+  button.secondary { background: transparent; color: #9aa3b5; border-color: #2a3140; font-size: 11px; padding: 4px 8px; margin-top: 4px; }
+  details.lab { margin-top: 14px; }
+  details.lab > summary { cursor: pointer; color: #9aa3b5; margin-bottom: 8px; }
   .letter-row { display:flex; gap:6px; margin: 6px 0 4px; }
   .letter-row button { flex:1; font-weight:700; font-size:15px; letter-spacing:0.04em; }
   .letter-row button.active { background:#2a4060; border-color:#6a9de8; color:#cfe2ff; }
@@ -41,7 +44,7 @@
 <body>
 <div id="wrap">
   <header>
-    <strong>Inflation Sim · ABC</strong> — DynaPuff Bold (SIL OFL) → <em>5 cm hollow block shell</em> → bubbly inflate · neo-Hookean
+    <strong>Inflation Sim</strong>
   </header>
   <div id="main">
     <canvas id="c"></canvas>
@@ -55,28 +58,31 @@
       </div>
       <label>Pressure <span class="val" id="pVal">0</span> Pa</label>
       <input type="range" id="pSlider" min="0" max="80000" step="50" value="0" />
-      <label>Auto-max (first warn)</label>
-      <button id="btnAuto" type="button">Set slider max from warn</button>
+      <button id="btnAuto" class="secondary" type="button">Match slider to first warning</button>
       <p>λ<sub>max</sub>: <span id="lam" class="val">1.00</span></p>
       <p>Status: <span id="st" class="ok">in range</span></p>
       <p>Solve: <span id="solve" class="warn">CPU settle · WebGL film</span></p>
-      <p>Last step: <span id="stepMs" class="val">—</span></p>
-      <p>Ladder: <span id="ladderMeta" class="val">—</span></p>
       <label id="wireToggleLabel" style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" autocomplete="off" /> Thin wireframe overlay</label>
-      <button id="btnResetCam" type="button">Reset camera</button>
+      <button id="btnResetCam" class="secondary" type="button">Reset camera</button>
       <p class="meta" style="margin-top:6px">Canvas: drag orbit · shift/right-drag pan · wheel/pinch zoom</p>
-      <p class="meta">
-        Pipeline: <code>DynaPuff Bold</code> (SIL OFL 1.1) → extrude <code>5 cm</code> block → inflate<br/>
-        Letter height <code>12 cm</code> · extrusion depth <code id="depthLabel">0.05 m</code> · h<sub>0</sub> <code>0.381 mm</code><br/>
-        μ = <code id="muShow"></code> Pa (grill eng. · not datasheet)<br/>
-        Mesh: <code id="meshLabel">—</code><br/>
-        Hollow film shell (faces + walls · not solid brick) · denser near bends/corners/holes · opacity from local film thickness h=H₀/(λ₁λ₂)<br/>
-        Film: IOR <code>1.53</code> estimate · Semi-Clear White · soft industrial gloss<br/>
-        Same NH + wrinkle clamp + λ≥2 warn · warn stills stop at <strong>first λ≥2</strong><br/>
-        Bar: <a class="dim" href="design/BLOCK-LETTER-BAR.md">design/BLOCK-LETTER-BAR.md</a><br/>
-        Public · quadmem default · bake A<br/>
-        Scrub: WASM SIMD lerp of a load-time Chiron pressure ladder (default ΔP=2000 Pa) · <a class="dim" href="docs/PRESSURE-LADDER.md">docs/PRESSURE-LADDER.md</a> · <code>?live=1</code> forces per-step CPU settle
-      </p>
+      <details class="lab">
+        <summary>Details</summary>
+        <p>Last step: <span id="stepMs" class="val">—</span></p>
+        <p>Ladder: <span id="ladderMeta" class="val">—</span></p>
+        <p class="meta">
+          DynaPuff Bold (SIL OFL) → 5 cm hollow block shell → neo-Hookean<br/>
+          Pipeline: <code>DynaPuff Bold</code> (SIL OFL 1.1) → extrude <code>5 cm</code> block → inflate<br/>
+          Letter height <code>12 cm</code> · extrusion depth <code id="depthLabel">0.05 m</code> · h<sub>0</sub> <code>0.381 mm</code><br/>
+          μ = <code id="muShow"></code> Pa (grill eng. · not datasheet)<br/>
+          Mesh: <code id="meshLabel">—</code><br/>
+          Hollow film shell (faces + walls · not solid brick) · denser near bends/corners/holes · opacity from local film thickness h=H₀/(λ₁λ₂)<br/>
+          Film: IOR <code>1.53</code> estimate · Semi-Clear White · soft industrial gloss<br/>
+          Same NH + wrinkle clamp + λ≥2 warn · warn stills stop at <strong>first λ≥2</strong><br/>
+          Bar: <a class="dim" href="design/BLOCK-LETTER-BAR.md">design/BLOCK-LETTER-BAR.md</a><br/>
+          Public · quadmem default · bake A<br/>
+          Scrub: WASM SIMD lerp of a load-time Chiron pressure ladder (default ΔP=2000 Pa) · <a class="dim" href="docs/PRESSURE-LADDER.md">docs/PRESSURE-LADDER.md</a> · <code>?live=1</code> forces per-step CPU settle
+        </p>
+      </details>
     </aside>
   </div>
 </div>
@@ -1711,13 +1717,17 @@ function uploadMesh(){
 
 // Viewport camera — extend the existing spherical lookAt (no second control stack).
 // Listeners stay on the canvas so pressure scrub / aside UI are untouched.
-const CAM0={rotY:0.42, rotX:0.06, dist:0.42, target:[0,0,0]};
+const qCam=new URLSearchParams(location.search);
+const beautyShot=qCam.get("beauty")==="1";
+const stillShot=qCam.get("still")==="1";
+// Product default closer than still/beauty (0.42) so the rest shell fills more of the canvas.
+const CAM0={rotY:0.42, rotX:0.06, dist:(beautyShot||stillShot)?0.42:0.28, target:[0,0,0]};
 const CAM_DIST_MIN=0.08, CAM_DIST_MAX=2.4, CAM_PITCH=Math.PI/2-0.05;
 let rotY=CAM0.rotY, rotX=CAM0.rotX, eyeDist=CAM0.dist, camTarget=CAM0.target.slice();
 const camPointers=new Map();
 let camDrag="orbit", lx=0, ly=0, pinch0=CAM0.dist, pinchDist0=1;
 function resetCamera(){ rotY=CAM0.rotY; rotX=CAM0.rotX; eyeDist=CAM0.dist; camTarget=CAM0.target.slice(); }
-if(new URLSearchParams(location.search).get("beauty")==="1") resetCamera(); // Mike: upright in viewport (not tipped on ground)
+if(beautyShot) resetCamera(); // Mike: upright in viewport (not tipped on ground)
 function camEye(){
   const c=Math.cos(rotX);
   return [
@@ -1791,7 +1801,7 @@ btnAuto.onclick=()=>{
     pSlider.min="0"; pSlider.max=String(found); pSlider.step=found>5000?"50":"20";
     targetP=found; pressure=found; tipSettledFor=found;
     pSlider.value=String(found); pVal.textContent=String(found);
-    btnAuto.textContent="Set slider max from warn"; btnAuto.disabled=false; autoBusy=false;
+    btnAuto.textContent="Match slider to first warning"; btnAuto.disabled=false; autoBusy=false;
   }, 0);
 };
 
