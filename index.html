@@ -69,13 +69,1920 @@
         Film: IOR <code>1.53</code> estimate · Semi-Clear White · soft industrial gloss<br/>
         Same NH + wrinkle clamp + λ≥2 warn · warn stills stop at <strong>first λ≥2</strong><br/>
         Bar: <a class="dim" href="design/BLOCK-LETTER-BAR.md">design/BLOCK-LETTER-BAR.md</a><br/>
-        Default: meshes/A.json · quadmem ON · No public page until Pages enabled
+        No public page · local overnight toy
       </p>
     </aside>
   </div>
 </div>
 <script src="design/earcut.min.js"></script>
 <script src="design/glyphs-data.js"></script>
-<script src="app.js"></script>
+<script>
+"use strict";
+// Chiron locks — do not invent μ
+const LH=0.12, DEPTH=0.05, H0=0.015*0.0254, PSI=6894.757, MU=(800*PSI)/1.75, WARN_LAM=2.0, IOR=1.53;
+(()=>{const el=document.getElementById("depthLabel"); if(el) el.textContent=(DEPTH).toFixed(2)+" m";})();
+const NZ=Math.max(3, Math.min(8, +(new URLSearchParams(location.search).get("nz")||7)|0));
+const BASE=Math.max(8, Math.min(28, +(new URLSearchParams(location.search).get("sub")||24)|0));
+document.getElementById("muShow").textContent=MU.toExponential(3);
+
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const scl=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const len=a=>Math.hypot(a[0],a[1],a[2]);
+const nrm=a=>{const l=len(a)||1;return scl(a,1/l);};
+function orthonormal(n){const nn=nrm(n);const tmp=Math.abs(nn[1])<0.9?[0,1,0]:[1,0,0];const t=nrm(cross(nn,tmp));return{t,b:cross(nn,t)};}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+
+if(!window.__GLYPHS__ || !window.earcut){
+  document.body.insertAdjacentHTML("beforeend","<p style='color:#ffb454;padding:20px'>Missing glyphs-data.js or earcut.min.js</p>");
+  throw new Error("missing glyph/earcut assets");
+}
+const FONT_USED = (__GLYPHS__.font||"DynaPuff Bold") + " (SIL OFL 1.1)";
+
+/** World-space rings for letter: outer first, then holes. XY meters, Y-up, centered. */
+function letterRings(L){
+  const g=__GLYPHS__.glyphs[L];
+  if(!g) throw new Error("no glyph "+L);
+  let xmin=Infinity,ymin=Infinity,xmax=-Infinity,ymax=-Infinity;
+  for(const r of g.rings){
+    for(let i=0;i<r.pts.length;i+=2){
+      xmin=Math.min(xmin,r.pts[i]); xmax=Math.max(xmax,r.pts[i]);
+      ymin=Math.min(ymin,r.pts[i+1]); ymax=Math.max(ymax,r.pts[i+1]);
+    }
+  }
+  const h=ymax-ymin||1;
+  const s=LH/h;
+  const cx=(xmin+xmax)/2, cy=(ymin+ymax)/2;
+  const rings=g.rings.map(r=>{
+    const pts=[];
+    for(let i=0;i<r.pts.length;i+=2){
+      pts.push((r.pts[i]-cx)*s, (cy - r.pts[i+1])*s); // OpenType Y-down → world Y-up
+    }
+    // drop duplicate close vertex
+    const n=pts.length/2;
+    if(n>2 && Math.hypot(pts[0]-pts[2*n-2], pts[1]-pts[2*n-1])<1e-9){ pts.length-=2; }
+    let a=0; const m=pts.length/2;
+    for(let i=0;i<m;i++){const j=(i+1)%m; a+=pts[2*i]*pts[2*j+1]-pts[2*j]*pts[2*i+1];}
+    a*=0.5;
+    return {pts, area:a, abs:Math.abs(a)};
+  });
+  rings.sort((a,b)=>b.abs-a.abs);
+  // Ensure outer CCW (+area), holes CW (−area) for earcut / PIP
+  function forceSign(ring, wantPos){
+    if((ring.area>0)!==wantPos){
+      const p=ring.pts, out=[];
+      for(let i=p.length/2-1;i>=0;i--) out.push(p[2*i], p[2*i+1]);
+      ring.pts=out; ring.area*=-1;
+    }
+  }
+  forceSign(rings[0], true);
+  for(let i=1;i<rings.length;i++) forceSign(rings[i], false);
+  return {rings, aspect:(xmax-xmin)/h, font:FONT_USED};
+}
+
+function ringLen(pts){
+  let L=0; const n=pts.length/2;
+  for(let i=0;i<n;i++){const j=(i+1)%n; L+=Math.hypot(pts[2*j]-pts[2*i], pts[2*j+1]-pts[2*i+1]);}
+  return L;
+}
+function resampleRing(pts, targetEdge, minN){
+  const n0=pts.length/2;
+  const peri=ringLen(pts)||1;
+  const N=Math.max(minN||24, Math.round(peri/targetEdge));
+  const out=[];
+  const cum=[0];
+  for(let i=0;i<n0;i++){
+    const j=(i+1)%n0;
+    cum.push(cum[i]+Math.hypot(pts[2*j]-pts[2*i], pts[2*j+1]-pts[2*i+1]));
+  }
+  const total=cum[n0];
+  for(let k=0;k<N;k++){
+    const t=(k/N)*total;
+    let i=0; while(i<n0-1 && cum[i+1]<t) i++;
+    const seg=cum[i+1]-cum[i]||1;
+    const u=(t-cum[i])/seg;
+    const j=(i+1)%n0;
+    out.push(pts[2*i]*(1-u)+pts[2*j]*u, pts[2*i+1]*(1-u)+pts[2*j+1]*u);
+  }
+  // curvature densify: insert midpoints at sharp bends
+  const dense=[];
+  const n=out.length/2;
+  for(let i=0;i<n;i++){
+    const i0=(i-1+n)%n, i1=i, i2=(i+1)%n;
+    dense.push(out[2*i1], out[2*i1+1]);
+    const ax=out[2*i1]-out[2*i0], ay=out[2*i1+1]-out[2*i0+1];
+    const bx=out[2*i2]-out[2*i1], by=out[2*i2+1]-out[2*i1+1];
+    const la=Math.hypot(ax,ay)||1, lb=Math.hypot(bx,by)||1;
+    const cos=(ax*bx+ay*by)/(la*lb);
+    if(cos<0.55){ // sharp-ish
+      dense.push((out[2*i1]+out[2*i2])*0.5, (out[2*i1+1]+out[2*i2+1])*0.5);
+    }
+  }
+  return dense;
+}
+
+function pointInRing(x,y,pts){
+  let inside=false; const n=pts.length/2;
+  for(let i=0,j=n-1;i<n;j=i++){
+    const xi=pts[2*i], yi=pts[2*i+1], xj=pts[2*j], yj=pts[2*j+1];
+    const intersect=((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/((yj-yi)||1e-18)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+function insideLetter(x,y,rings){
+  if(!pointInRing(x,y,rings[0].pts)) return false;
+  for(let i=1;i<rings.length;i++) if(pointInRing(x,y,rings[i].pts)) return false;
+  return true;
+}
+function distSeg(px,py,ax,ay,bx,by){
+  const abx=bx-ax, aby=by-ay;
+  const den=abx*abx+aby*aby||1e-18;
+  const t=clamp(((px-ax)*abx+(py-ay)*aby)/den,0,1);
+  return Math.hypot(px-(ax+t*abx), py-(ay+t*aby));
+}
+function distToRings(x,y,rings){
+  let best=1e9;
+  for(const r of rings){
+    const p=r.pts; const n=p.length/2;
+    for(let i=0;i<n;i++){
+      const j=(i+1)%n;
+      best=Math.min(best, distSeg(x,y,p[2*i],p[2*i+1],p[2*j],p[2*j+1]));
+    }
+  }
+  return best;
+}
+function projectToBoundary(x,y,rings){
+  let best=1e9, qx=x, qy=y;
+  for(const r of rings){
+    const p=r.pts; const n=p.length/2;
+    for(let i=0;i<n;i++){
+      const j=(i+1)%n;
+      const ax=p[2*i], ay=p[2*i+1], bx=p[2*j], by=p[2*j+1];
+      const abx=bx-ax, aby=by-ay;
+      const den=abx*abx+aby*aby||1e-18;
+      const t=clamp(((x-ax)*abx+(y-ay)*aby)/den,0,1);
+      const px=ax+t*abx, py=ay+t*aby;
+      const d=Math.hypot(x-px,y-py);
+      if(d<best){ best=d; qx=px; qy=py; }
+    }
+  }
+  return [qx,qy,best];
+}
+
+let letter="A";
+let pos0=[], pos=[], tris=[], quads=null, faceTris=null, seamW=[], N=0, rest=[];
+let restQ=[], orphanTris=[], orphanRest=[]; // quad membrane rest + orphan faceTris
+let BAKE_MODE=false;
+// Contact: non-penetration for hollow film (front/back + proximity)
+const CONTACT_KISS=Math.max(2*H0, 1e-4); // ~0.76 mm film-stack kiss — NOT a visible air standoff
+// Soft stretch plateau — was 2.8; that zeroed membrane stiffness below warn λ and killed dead-p equilibria.
+const LAM_STRETCH_CAP=2.8;
+const CONTACT_EPS=CONTACT_KISS; // alias
+const CONTACT_ENGAGE=0.003; // 3 mm detect/soft-press band; project TOWARD kiss only (never hold ENGAGE as gap)
+const FAST_CONTACT=new URLSearchParams(location.search).get("fast")==="1"; // search-only cheaper contact
+const ACTIVE_SET=new URLSearchParams(location.search).get("activeset")!=="0"; // Phase 0.2 — set activeset=0 to disable
+const ACTIVE_REFRESH=4; // full spatial hash every N prox applies
+const WARM_START=new URLSearchParams(location.search).get("warmstart")!=="0"; // Phase 0.3 — warmstart=0 disables
+const ANALYTIC_FORCES=new URLSearchParams(location.search).get("fdforces")!=="1"; // analytic neo-Hookean; fdforces=1 = old FD
+// Bilinear quad membrane path — DEFAULT ON (Zeus 2026-09-06: Design re-PASS post-pforce + Chiron 1–10 allPass on A remesh).
+// Opt out / debug: ?quadmem=0 (tri-split fallback).
+const USE_QUAD_MEMBRANE = new URLSearchParams(location.search).get("quadmem") !== "0";
+let contactPairs=[], contactAdj=null;
+let force=null;
+let pressure=0, targetP=0, lamMax=1, warn=false, autoBusy=false, tipSettledFor=-1;
+let gasNRT=null; // null=dead p; number ⇒ isothermal gas p=gasNRT/V (stable high-λ branch)
+let lastSolveMs=0, lastSolveIters=0;
+let idx=null, edgeIdx=null, freeEdgeIdx=null, bufIdxReady=false;
+let meshMeta={};
+
+const key=p=>p.map(v=>(Math.round(v*1e9)/1e9).toFixed(9)).join(",");
+
+function buildLetterMesh(L){
+  letter=L;
+  const {rings:rawRings, aspect, font}=letterRings(L);
+  // Hollow film shell: grid caps (real membrane DOFs) + contour side walls.
+  // Rest = 5 cm extruded block. Not solid brick tets. DynaPuff PIP for occupancy.
+  const targetOuter = LH / (BASE * 1.4);
+  const targetHole = LH / (BASE * 1.9);
+  const rings = rawRings.map((r,i)=>({
+    pts: resampleRing(r.pts, i===0?targetOuter:targetHole, i===0?72:48),
+    isHole: i>0
+  }));
+
+  const zF=DEPTH/2, zB=-DEPTH/2;
+  const Lw=LH*aspect;
+  const boost = L==="C" ? 4 : (L==="B" ? 3 : 2);
+  const nv=BASE+boost;
+  const nu=Math.max(16, Math.round(nv*aspect*1.08));
+  const xmin=-Lw/2, ymin=-LH/2, dx=Lw/nu, dy=LH/nv;
+
+  const vertMap=new Map();
+  pos0=[]; pos=[]; tris=[];
+  function getVert(p){
+    const k=key(p);
+    if(vertMap.has(k)) return vertMap.get(k);
+    const id=pos0.length/3;
+    pos0.push(p[0],p[1],p[2]); pos.push(p[0],p[1],p[2]);
+    vertMap.set(k,id); return id;
+  }
+
+  const occ=Array.from({length:nv},()=>Array(nu).fill(false));
+  for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
+    let hit=0, tot=0;
+    for(let sj=0;sj<3;sj++)for(let si=0;si<3;si++){
+      const x=xmin+(i+(si+0.5)/3)*dx;
+      const y=ymin+(j+(sj+0.5)/3)*dy;
+      tot++; if(insideLetter(x,y,rings)) hit++;
+    }
+    occ[j][i]=hit>=tot*0.34;
+  }
+  const refine=Array.from({length:nv},()=>Array(nu).fill(0));
+  const thr = L==="B" ? LH*0.048 : LH*0.042;
+  for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
+    if(!occ[j][i]) continue;
+    const x=xmin+(i+0.5)*dx, y=ymin+(j+0.5)*dy;
+    const d=distToRings(x,y,rings);
+    refine[j][i] = (L==="C" || d<thr) ? 2 : 1;
+  }
+  const refOut=refine.map(r=>r.slice());
+  for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
+    if(refine[j][i]!==2) continue;
+    for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){
+      const jj=j+dj, ii=i+di;
+      if(jj>=0&&jj<nv&&ii>=0&&ii<nu&&refOut[jj][ii]===1) refOut[jj][ii]=2;
+    }
+  }
+
+  function addCapQuad(x0,y0,x1,y1,z, flip){
+    const ia=getVert([x0,y0,z]), ib=getVert([x1,y0,z]), ic=getVert([x1,y1,z]), id=getVert([x0,y1,z]);
+    if(flip) tris.push([ia,ic,ib],[ia,id,ic]);
+    else tris.push([ia,ib,ic],[ia,ic,id]);
+  }
+  let nRefined=0, nCoarse=0;
+  for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
+    if(!occ[j][i]) continue;
+    const x0=xmin+i*dx, x1=xmin+(i+1)*dx;
+    const y0=ymin+j*dy, y1=ymin+(j+1)*dy;
+    if(refOut[j][i]===2){
+      const xm=(x0+x1)/2, ym=(y0+y1)/2;
+      addCapQuad(x0,y0,xm,ym,zF,false); addCapQuad(xm,y0,x1,ym,zF,false);
+      addCapQuad(x0,ym,xm,y1,zF,false); addCapQuad(xm,ym,x1,y1,zF,false);
+      addCapQuad(x0,y0,xm,ym,zB,true); addCapQuad(xm,y0,x1,ym,zB,true);
+      addCapQuad(x0,ym,xm,y1,zB,true); addCapQuad(xm,ym,x1,y1,zB,true);
+      nRefined++;
+    } else {
+      addCapQuad(x0,y0,x1,y1,zF,false);
+      addCapQuad(x0,y0,x1,y1,zB,true);
+      nCoarse++;
+    }
+  }
+
+  // Soft-snap near-silhouette cap verts (both faces) before walls.
+  for(let id=0;id<pos0.length/3;id++){
+    const x=pos0[3*id], y=pos0[3*id+1], z=pos0[3*id+2];
+    if(Math.abs(Math.abs(z)-zF)>1e-9) continue;
+    const d=distToRings(x,y,rings);
+    if(d<Math.max(dx,dy)*0.9){
+      const [qx,qy]=projectToBoundary(x,y,rings);
+      const mix=clamp(1-d/(Math.max(dx,dy)*0.9),0,0.8);
+      pos0[3*id]=x+(qx-x)*mix; pos0[3*id+1]=y+(qy-y)*mix;
+      pos[3*id]=pos0[3*id]; pos[3*id+1]=pos0[3*id+1];
+    }
+  }
+
+  // Walls from CAP BOUNDARY LOOPS — share silhouette verts (manifold by construction).
+  // Do not extrude independent DynaPuff rings (that left open seams / nonmanifold hacks).
+  function xyKeyId(id){
+    return (Math.round(pos0[3*id]*1e7)/1e7).toFixed(7)+","+(Math.round(pos0[3*id+1]*1e7)/1e7).toFixed(7);
+  }
+  function boundaryLoopsAtZ(zTarget){
+    const edgeCount=new Map();
+    const ek=(a,b)=>a<b?a+"_"+b:b+"_"+a;
+    for(const [a,b,c] of tris){
+      for(const [u,v] of [[a,b],[b,c],[c,a]]) edgeCount.set(ek(u,v),(edgeCount.get(ek(u,v))||0)+1);
+    }
+    const adj=new Map();
+    for(const [k,c] of edgeCount){
+      if(c!==1) continue;
+      const [u,v]=k.split("_").map(Number);
+      if(Math.abs(pos0[3*u+2]-zTarget)>1e-9) continue;
+      if(Math.abs(pos0[3*v+2]-zTarget)>1e-9) continue;
+      if(!adj.has(u)) adj.set(u,[]);
+      if(!adj.has(v)) adj.set(v,[]);
+      adj.get(u).push(v); adj.get(v).push(u);
+    }
+    const visited=new Set();
+    const loops=[];
+    for(const start of adj.keys()){
+      if(visited.has(start)) continue;
+      const loop=[];
+      let prev=-1, cur=start, guard=0;
+      while(cur>=0 && guard++<100000){
+        if(visited.has(cur) && cur===start && loop.length>=3) break;
+        if(visited.has(cur)) break;
+        visited.add(cur); loop.push(cur);
+        const nbrs=adj.get(cur)||[];
+        let next=-1;
+        for(const n of nbrs){ if(n!==prev){ next=n; break; } }
+        if(next<0) break;
+        prev=cur; cur=next;
+        if(cur===start) break;
+      }
+      if(loop.length>=3) loops.push(loop);
+    }
+    return loops;
+  }
+  function nearestBackId(fid, backByXY){
+    const k=xyKeyId(fid);
+    if(backByXY.has(k)) return backByXY.get(k);
+    const x=pos0[3*fid], y=pos0[3*fid+1];
+    let best=-1, bestD=Math.max(dx,dy)*1.5;
+    for(const [bk, id] of backByXY){
+      const d=Math.hypot(pos0[3*id]-x, pos0[3*id+1]-y);
+      if(d<bestD){ bestD=d; best=id; }
+    }
+    return best;
+  }
+  function addWallsFromFrontLoop(frontLoop, backByXY){
+    const n=frontLoop.length;
+    const backLoop=new Int32Array(n);
+    for(let i=0;i<n;i++){
+      const b=nearestBackId(frontLoop[i], backByXY);
+      if(b<0) return {ok:false, reason:"no-back", i};
+      backLoop[i]=b;
+    }
+    const layers=[Int32Array.from(frontLoop)];
+    for(let k=1;k<NZ;k++){
+      const t=k/NZ;
+      const row=new Int32Array(n);
+      for(let i=0;i<n;i++){
+        const fi=frontLoop[i], bi=backLoop[i];
+        const x=pos0[3*fi]*(1-t)+pos0[3*bi]*t;
+        const y=pos0[3*fi+1]*(1-t)+pos0[3*bi+1]*t;
+        const z=zF*(1-t)+zB*t;
+        row[i]=getVert([x,y,z]);
+      }
+      layers.push(row);
+    }
+    layers.push(backLoop);
+    let quads=0;
+    for(let k=0;k<NZ;k++){
+      for(let i=0;i<n;i++){
+        const j=(i+1)%n;
+        const a=layers[k][i], b=layers[k][j], c=layers[k+1][j], d=layers[k+1][i];
+        if(a===b||b===c||c===d||d===a||a===c||b===d) continue;
+        // outward-ish: front CCW from +z → wall a,d,c / a,c,b keeps rim shared once
+        tris.push([a,d,c],[a,c,b]);
+        quads++;
+      }
+    }
+    return {ok:true, n, quads};
+  }
+
+  const backByXY=new Map();
+  {
+    const nV=pos0.length/3;
+    for(let id=0;id<nV;id++){
+      if(Math.abs(pos0[3*id+2]-zB)<1e-9) backByXY.set(xyKeyId(id), id);
+    }
+  }
+  const frontLoops=boundaryLoopsAtZ(zF);
+  let wallQuads=0, wallLoops=0;
+  for(const loop of frontLoops){
+    const r=addWallsFromFrontLoop(loop, backByXY);
+    if(!r.ok) console.warn("[mesh] wall loop fail", r);
+    else { wallLoops++; wallQuads+=r.quads; }
+  }
+  console.log("[mesh] cap-boundary walls", {frontLoops:frontLoops.length, wallLoops, wallQuads, NZ});
+
+  N=pos.length/3;
+  // seamW buffer slot reused as thickness ratio h/H0 (updated in uploadMesh)
+  seamW=new Array(N).fill(1);
+
+
+  {
+    let V0=0;
+    for(const [i,j,k] of tris){
+      const x0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]],x1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]],x2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+      V0+=x0[0]*(x1[1]*x2[2]-x1[2]*x2[1])+x0[1]*(x1[2]*x2[0]-x1[0]*x2[2])+x0[2]*(x1[0]*x2[1]-x1[1]*x2[0]);
+    }
+    V0/=6;
+    if(V0<0){ for(const tri of tris){ const tmp=tri[1]; tri[1]=tri[2]; tri[2]=tmp; } }
+  }
+
+  // Drop degenerate tris
+  {
+    const good=[];
+    for(const tri of tris){
+      const [i,j,k]=tri;
+      const e1=sub([pos0[3*j],pos0[3*j+1],pos0[3*j+2]],[pos0[3*i],pos0[3*i+1],pos0[3*i+2]]);
+      const e2=sub([pos0[3*k],pos0[3*k+1],pos0[3*k+2]],[pos0[3*i],pos0[3*i+1],pos0[3*i+2]]);
+      if(len(cross(e1,e2))>1e-14) good.push(tri);
+    }
+    if(good.length!==tris.length) console.warn('[mesh] dropped degenerate', tris.length-good.length);
+    tris=good;
+  }
+
+  rest=[];
+  for(const [i,j,k] of tris){
+    const p0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]], p1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]], p2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+    const e1=sub(p1,p0), e2=sub(p2,p0);
+    const {t:te,b:be}=orthonormal(nrm(cross(e1,e2)));
+    const r1=[dot(e1,te),dot(e1,be)], r2=[dot(e2,te),dot(e2,be)];
+    const detR=r1[0]*r2[1]-r1[1]*r2[0];
+    if(!Number.isFinite(detR) || Math.abs(detR)<1e-18) continue;
+    rest.push({A0:0.5*Math.abs(detR), inv:[r2[1]/detR,-r2[0]/detR,-r1[1]/detR,r1[0]/detR]});
+    if(rest.length!==tris.indexOf([i,j,k])+1){ /* keep parallel via rebuild below */ }
+  }
+  // Align tris to rest
+  {
+    const kept=[], rest2=[];
+    for(const tri of tris){
+      const [i,j,k]=tri;
+      const p0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]], p1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]], p2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+      const e1=sub(p1,p0), e2=sub(p2,p0);
+      const {t:te,b:be}=orthonormal(nrm(cross(e1,e2)));
+      const r1=[dot(e1,te),dot(e1,be)], r2=[dot(e2,te),dot(e2,be)];
+      const detR=r1[0]*r2[1]-r1[1]*r2[0];
+      if(!Number.isFinite(detR) || Math.abs(detR)<1e-18) continue;
+      kept.push(tri);
+      rest2.push({A0:0.5*Math.abs(detR), inv:[r2[1]/detR,-r2[0]/detR,-r1[1]/detR,r1[0]/detR]});
+    }
+    tris=kept; rest=rest2;
+  }
+  buildRestQFromQuads();
+  buildOrphanRestFromFaceTris();
+  pruneQuadmemSliverOrphans();
+  rebuildMembraneTrisFromOrientedCover();
+  if(USE_QUAD_MEMBRANE){
+    console.log("[quadmem] restQ", restQ.length, "orphanTris", orphanTris.length, "trisCover", tris.length, "MU", MU);
+  }
+  force=new Float64Array(N*3); ensureMinimizeScratch(N*3);
+
+  idx=new Uint32Array(tris.length*3);
+  for(let t=0;t<tris.length;t++){idx[t*3]=tris[t][0];idx[t*3+1]=tris[t][1];idx[t*3+2]=tris[t][2];}
+  const edgeSet=new Set();
+  for(const [i,j,k] of tris){
+    for(const [a,b] of [[i,j],[j,k],[k,i]]) edgeSet.add(Math.min(a,b)+"_"+Math.max(a,b));
+  }
+  edgeIdx=new Uint32Array(edgeSet.size*2);
+  { let e=0; for(const k of edgeSet){ const [a,b]=k.split("_").map(Number); edgeIdx[e++]=a; edgeIdx[e++]=b; } }
+  // Free / boundary edges (incidence == 1 across all tris)
+  {
+    const ec=new Map();
+    for(const [i,j,k] of tris){
+      for(const [a,b] of [[i,j],[j,k],[k,i]]){
+        const key=Math.min(a,b)+"_"+Math.max(a,b);
+        ec.set(key,(ec.get(key)||0)+1);
+      }
+    }
+    const free=[];
+    for(const [k,c] of ec){ if(c===1){ const [a,b]=k.split("_").map(Number); free.push(a,b); } }
+    freeEdgeIdx=new Uint32Array(free);
+  }
+
+  // Front/back contact pairs: same rest (x,y) on opposite caps z≈±DEPTH/2
+  contactPairs=[];
+  {
+    const front=new Map(), back=new Map();
+    const xyKey=(x,y)=> (Math.round(x*1e7)/1e7).toFixed(7)+","+(Math.round(y*1e7)/1e7).toFixed(7);
+    for(let id=0;id<N;id++){
+      const x=pos0[3*id], y=pos0[3*id+1], z=pos0[3*id+2];
+      if(Math.abs(z-zF)<1e-8) front.set(xyKey(x,y), id);
+      else if(Math.abs(z-zB)<1e-8) back.set(xyKey(x,y), id);
+    }
+    for(const [k,i] of front){ if(back.has(k)) contactPairs.push([i, back.get(k)]); }
+  }
+  // Topological adjacency (1-ring) — skip for proximity repulsion
+  contactAdj=Array.from({length:N},()=>new Set());
+  for(let e=0;e<edgeIdx.length;e+=2){
+    const a=edgeIdx[e], b=edgeIdx[e+1];
+    contactAdj[a].add(b); contactAdj[b].add(a);
+  }
+  console.log("[contact] pairs", contactPairs.length, "KISS", CONTACT_KISS, "ENGAGE", CONTACT_ENGAGE);
+  {
+    const nFree = freeEdgeIdx ? (freeEdgeIdx.length/2)|0 : 0;
+    const diagOn = new URLSearchParams(location.search).get("meshdiag")==="1";
+    quads=null; faceTris=null; window.quads=null; window.faceTris=null; BAKE_MODE=false;
+    restQ=[]; orphanTris=[]; orphanRest=[];
+    window.__MESH_DIAG__ = {letter:L, N, tris:tris.length, edges:(edgeIdx.length/2)|0, freeEdges:nFree, mesh:"grid+cap-boundary-salvage", gmshLoaded:false};
+    const ban=document.getElementById("meshDiagBanner");
+    if(ban && diagOn){
+      ban.style.display="block";
+      ban.innerHTML="<strong>MESH-DIAG · "+L+"</strong> · current grid+cap-boundary salvage (Gmsh pending)<br/>nodes="+N+" · tris="+tris.length+" · free/boundary edges="+nFree+" · yellow=nodes · cyan=wire · <span style=\"color:#ff7a7a\">red=free</span>";
+    }
+    console.log("[meshdiag]", window.__MESH_DIAG__);
+  }
+
+  let V=0; for(const [i,j,k] of tris){const x0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]],x1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]],x2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]]; V+=dot(x0,cross(sub(x1,x0),sub(x2,x0)));}
+  V/=6;
+  meshMeta={letter:L, font, depth_m:DEPTH, shell:"hollow-film-grid", nu, nv, nRefined, nCoarse, N, tris:tris.length, V_mL:V*1e6, holes:rings.length-1, NZ};
+  document.getElementById("meshLabel").textContent=
+    `${font} · hollow film shell ${DEPTH.toFixed(2)} m · grid ${nu}×${nv} · NZ=${NZ} · ${N}v/${tris.length}t · V₀ ${(V*1e6).toFixed(1)} mL`;
+  bufIdxReady=false;
+  console.log("[mesh]", meshMeta);
+}
+
+function volumeTriIJK(i,j,k){
+  const x0=[pos[3*i],pos[3*i+1],pos[3*i+2]],x1=[pos[3*j],pos[3*j+1],pos[3*j+2]],x2=[pos[3*k],pos[3*k+1],pos[3*k+2]];
+  return dot(x0,cross(sub(x1,x0),sub(x2,x0)))/6;
+}
+function volume(){
+  let V=0; for(const [i,j,k] of tris) V+=volumeTriIJK(i,j,k);
+  return V;
+}
+function triW(t){
+  const [i,j,k]=tris[t]; const {A0,inv}=rest[t];
+  return triWAt(i,j,k,A0,inv);
+}
+function triWAt(i,j,k,A0,inv){
+  const x0=[pos[3*i],pos[3*i+1],pos[3*i+2]], x1=[pos[3*j],pos[3*j+1],pos[3*j+2]], x2=[pos[3*k],pos[3*k+1],pos[3*k+2]];
+  const e1=sub(x1,x0), e2=sub(x2,x0);
+  const F00=e1[0]*inv[0]+e2[0]*inv[2], F01=e1[0]*inv[1]+e2[0]*inv[3];
+  const F10=e1[1]*inv[0]+e2[1]*inv[2], F11=e1[1]*inv[1]+e2[1]*inv[3];
+  const F20=e1[2]*inv[0]+e2[2]*inv[2], F21=e1[2]*inv[1]+e2[2]*inv[3];
+  const C00=F00*F00+F10*F10+F20*F20, C01=F00*F01+F10*F11+F20*F21, C11=F01*F01+F11*F11+F21*F21;
+  const tr=C00+C11, detC=C00*C11-C01*C01; const disc=Math.sqrt(Math.max(0,0.25*tr*tr-detC));
+  let l1sq=Math.max(1e-12,0.5*tr+disc), l2sq=Math.max(1e-12,0.5*tr-disc);
+  if(l1sq<1)l1sq=1; if(l2sq<1)l2sq=1; // wrinkle clamp
+  const lam1=Math.sqrt(l1sq), lam2=Math.sqrt(l2sq);
+  const lam1e=Math.min(lam1,LAM_STRETCH_CAP), lam2e=Math.min(lam2,LAM_STRETCH_CAP);
+  const lam3=1/(lam1e*lam2e); const I1=lam1e*lam1e+lam2e*lam2e+lam3*lam3;
+  const nvec=cross(e1,e2), twiceA=len(nvec);
+  return {i,j,k,lam1,lam2,W:0.5*MU*(I1-3)*H0*A0,A:0.5*twiceA,n:twiceA>1e-18?scl(nvec,1/twiceA):[0,0,1]};
+}
+// Bilinear quad membrane: 2×2 Gauss on neo-Hookean I1; SRI uses centroid rest Jacobian J0c
+// for all GP area weights (Hughes-style mean-dilation on the area measure). Plane-stress
+// λ3=1/(λ1λ2) is already condensed — same μ/H0/wrinkle clamp as triW; no separate volumetric
+// penalty to reduce further. Corner order CCW: ξ,η = (−1,−1),(+1,−1),(+1,+1),(−1,+1).
+// Verified offline (coarse A): Σ 4·J0c == bilinear area == two-tri split area; identity I1=3
+// at all GP; equibiaxial W matches CST to ~1e-15. WarmRamp Δ was NOT an SRI area-weight bug.
+const _Q_XI=[-1,1,1,-1], _Q_ETA=[-1,-1,1,1], _Q_GP=1/Math.sqrt(3);
+const _Q_GPS=[[-_Q_GP,-_Q_GP],[_Q_GP,-_Q_GP],[_Q_GP,_Q_GP],[-_Q_GP,_Q_GP]];
+function quadShapeDN(xi,eta,dNxi,dNeta){
+  for(let a=0;a<4;a++){
+    const xa=_Q_XI[a], ya=_Q_ETA[a];
+    dNxi[a]=0.25*xa*(1+ya*eta);
+    dNeta[a]=0.25*ya*(1+xa*xi);
+  }
+}
+function buildRestQFromQuads(){
+  restQ=[];
+  if(!quads||!quads.length) return;
+  const dNxi=new Float64Array(4), dNeta=new Float64Array(4);
+  for(const q of quads){
+    const ids=q.slice();
+    const P=[];
+    for(let a=0;a<4;a++){
+      const id=ids[a];
+      P.push([pos0[3*id],pos0[3*id+1],pos0[3*id+2]]);
+    }
+    const e02=sub(P[2],P[0]), e13=sub(P[3],P[1]);
+    let nvec=cross(e02,e13);
+    if(len(nvec)<1e-18){
+      nvec=cross(sub(P[1],P[0]),sub(P[3],P[0]));
+    }
+    if(len(nvec)<1e-18) continue;
+    const {t:te,b:be}=orthonormal(nrm(nvec));
+    const Y=[];
+    for(let a=0;a<4;a++){
+      const d=sub(P[a],P[0]);
+      Y.push([dot(d,te),dot(d,be)]);
+    }
+    // Centroid Jacobian for SRI area weights
+    quadShapeDN(0,0,dNxi,dNeta);
+    let G00=0,G01=0,G10=0,G11=0;
+    for(let a=0;a<4;a++){
+      G00+=Y[a][0]*dNxi[a]; G10+=Y[a][1]*dNxi[a];
+      G01+=Y[a][0]*dNeta[a]; G11+=Y[a][1]*dNeta[a];
+    }
+    const detC=G00*G11-G01*G10;
+    if(!Number.isFinite(detC)||Math.abs(detC)<1e-18) continue;
+    const J0c=Math.abs(detC);
+    const gps=[];
+    let ok=true;
+    for(let g=0;g<4;g++){
+      const [xi,eta]=_Q_GPS[g];
+      quadShapeDN(xi,eta,dNxi,dNeta);
+      let g00=0,g01=0,g10=0,g11=0;
+      for(let a=0;a<4;a++){
+        g00+=Y[a][0]*dNxi[a]; g10+=Y[a][1]*dNxi[a];
+        g01+=Y[a][0]*dNeta[a]; g11+=Y[a][1]*dNeta[a];
+      }
+      const det=g00*g11-g01*g10;
+      if(!Number.isFinite(det)||Math.abs(det)<1e-18){ ok=false; break; }
+      const inv=[g11/det,-g01/det,-g10/det,g00/det];
+      gps.push({
+        inv,
+        dNxi:[dNxi[0],dNxi[1],dNxi[2],dNxi[3]],
+        dNeta:[dNeta[0],dNeta[1],dNeta[2],dNeta[3]],
+        A0:J0c // SRI: w_g=1; 4·J0c = ∫|J|dξdη on [-1,1]² (exact for planar bilinear)
+      });
+    }
+    if(!ok) continue;
+    // Diagonal 0–2 CST rests for warp fallback (Chiron: warped quads → split/correct)
+    const triA=_quadDiagTriRest(ids[0],ids[1],ids[2]);
+    const triB=_quadDiagTriRest(ids[0],ids[2],ids[3]);
+    if(!triA||!triB) continue;
+    const warp0=_quadWarpRel(ids, pos0);
+    // Always evaluate membrane as two-CST (triA/triB): identical surface to volume/pressure
+    // cover. Flat quads: CST ≡ bilinear; warped: required fallback. Avoids Chiron §9 floor
+    // from bilinear membrane vs tri pressure mismatch (‖F_bilin−F_CST‖~1e-2).
+    restQ.push({ids, gps, J0c, triA, triB, warpSplit: true, warp0});
+  }
+}
+/** Rest CST for one diagonal of a quad — same A0/inv construction as tri path. */
+function _quadDiagTriRest(i,j,k){
+  const p0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]], p1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]], p2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+  const e1=sub(p1,p0), e2=sub(p2,p0);
+  if(len(cross(e1,e2))<=1e-14) return null;
+  const {t:te,b:be}=orthonormal(nrm(cross(e1,e2)));
+  const r1=[dot(e1,te),dot(e1,be)], r2=[dot(e2,te),dot(e2,be)];
+  const detR=r1[0]*r2[1]-r1[1]*r2[0];
+  if(!Number.isFinite(detR)||Math.abs(detR)<1e-18) return null;
+  return {i,j,k, A0:0.5*Math.abs(detR), inv:[r2[1]/detR,-r2[0]/detR,-r1[1]/detR,r1[0]/detR]};
+}
+/** Diagonal midpoints separation / mean edge — ~0 for planar, grows with warp. */
+function _quadWarpRel(ids, srcPos){
+  // srcPos defaults to current pos; pass pos0 to lock rest-branch decisions.
+  const Pnt = srcPos || pos;
+  const P=ids.map(id=>[Pnt[3*id],Pnt[3*id+1],Pnt[3*id+2]]);
+  const m02=[(P[0][0]+P[2][0])/2,(P[0][1]+P[2][1])/2,(P[0][2]+P[2][2])/2];
+  const m13=[(P[1][0]+P[3][0])/2,(P[1][1]+P[3][1])/2,(P[1][2]+P[3][2])/2];
+  const warp=Math.hypot(m02[0]-m13[0], m02[1]-m13[1], m02[2]-m13[2]);
+  let edge=0;
+  for(let a=0;a<4;a++){
+    const b=(a+1)&3;
+    edge+=Math.hypot(P[a][0]-P[b][0], P[a][1]-P[b][1], P[a][2]-P[b][2]);
+  }
+  edge*=0.25;
+  return edge>1e-18 ? warp/edge : 0;
+}
+const QUAD_WARP_SPLIT=0.05; // relative warp → two-CST fallback (locked at rest — no live switch)
+function buildOrphanRestFromFaceTris(){
+  orphanTris=[]; orphanRest=[];
+  if(!faceTris||!faceTris.length) return;
+  for(const tri of faceTris){
+    const [i,j,k]=tri;
+    const p0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]], p1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]], p2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+    const e1=sub(p1,p0), e2=sub(p2,p0);
+    if(len(cross(e1,e2))<=1e-14) continue;
+    const {t:te,b:be}=orthonormal(nrm(cross(e1,e2)));
+    const r1=[dot(e1,te),dot(e1,be)], r2=[dot(e2,te),dot(e2,be)];
+    const detR=r1[0]*r2[1]-r1[1]*r2[0];
+    if(!Number.isFinite(detR)||Math.abs(detR)<1e-18) continue;
+    orphanTris.push([i,j,k]);
+    orphanRest.push({A0:0.5*Math.abs(detR), inv:[r2[1]/detR,-r2[0]/detR,-r1[1]/detR,r1[0]/detR]});
+  }
+}
+/**
+ * Quadmem-only: drop faceTris slivers (A0 < 0.1·mean half-quad) from orphan membrane AND
+ * from the tri cover (pressure/volume). Offline: those slivers snap λ→3.5 under bilinear
+ * coupling, warmRamp secant resetMesh then lands in a bad basin (Δλ/ΔV ~20%). Not an SRI bug.
+ */
+function pruneQuadmemSliverOrphans(){
+  if(!USE_QUAD_MEMBRANE || !restQ.length || !orphanRest.length) return;
+  let sumA=0; for(const rq of restQ) sumA+=4*rq.J0c;
+  const meanHalf=(sumA/restQ.length)/2;
+  const floor=0.1*meanHalf;
+  const drop=new Set();
+  const keepT=[], keepR=[];
+  for(let t=0;t<orphanTris.length;t++){
+    if(orphanRest[t].A0<floor){
+      drop.add(orphanTris[t].slice().sort((a,b)=>a-b).join(','));
+      continue;
+    }
+    keepT.push(orphanTris[t]); keepR.push(orphanRest[t]);
+  }
+  if(!drop.size) return;
+  orphanTris=keepT; orphanRest=keepR;
+  const kept=[], restKept=[];
+  for(let t=0;t<tris.length;t++){
+    const key=tris[t].slice().sort((a,b)=>a-b).join(',');
+    if(drop.has(key)) continue;
+    kept.push(tris[t]); restKept.push(rest[t]);
+  }
+  tris=kept; rest=restKept;
+  idx=new Uint32Array(tris.length*3);
+  for(let t=0;t<tris.length;t++){ idx[t*3]=tris[t][0]; idx[t*3+1]=tris[t][1]; idx[t*3+2]=tris[t][2]; }
+  console.log('[quadmem] pruned sliver faceTris', drop.size, 'floorA0', floor, 'orphanLeft', orphanTris.length, 'tris', tris.length);
+}
+function quadW(q){
+  const rq=restQ[q]; const ids=rq.ids;
+  // Chiron: after inflate, warped quads → two-tri membrane (same physics as tri-split cover)
+  if(rq.triA && rq.warpSplit){
+    const a=triWAt(rq.triA.i,rq.triA.j,rq.triA.k,rq.triA.A0,rq.triA.inv);
+    const b=triWAt(rq.triB.i,rq.triB.j,rq.triB.k,rq.triB.A0,rq.triB.inv);
+    return {lam1:Math.max(a.lam1,b.lam1), lam2:Math.max(a.lam2,b.lam2), W:a.W+b.W};
+  }
+  let W=0, lam1m=1, lam2m=1;
+  for(let g=0;g<4;g++){
+    const gp=rq.gps[g]; const inv=gp.inv; const A0=gp.A0;
+    const dNxi=gp.dNxi, dNeta=gp.dNeta;
+    let e10=0,e11=0,e12=0, e20=0,e21=0,e22=0;
+    for(let a=0;a<4;a++){
+      const id=ids[a], bx=pos[3*id], by=pos[3*id+1], bz=pos[3*id+2];
+      const nx=dNxi[a], ny=dNeta[a];
+      e10+=bx*nx; e11+=by*nx; e12+=bz*nx;
+      e20+=bx*ny; e21+=by*ny; e22+=bz*ny;
+    }
+    const F00=e10*inv[0]+e20*inv[2], F01=e10*inv[1]+e20*inv[3];
+    const F10=e11*inv[0]+e21*inv[2], F11=e11*inv[1]+e21*inv[3];
+    const F20=e12*inv[0]+e22*inv[2], F21=e12*inv[1]+e22*inv[3];
+    const C00=F00*F00+F10*F10+F20*F20, C01=F00*F01+F10*F11+F20*F21, C11=F01*F01+F11*F11+F21*F21;
+    const tr=C00+C11, detC=C00*C11-C01*C01; const disc=Math.sqrt(Math.max(0,0.25*tr*tr-detC));
+    let l1sq=Math.max(1e-12,0.5*tr+disc), l2sq=Math.max(1e-12,0.5*tr-disc);
+    if(l1sq<1)l1sq=1; if(l2sq<1)l2sq=1;
+    const lam1=Math.sqrt(l1sq), lam2=Math.sqrt(l2sq);
+    lam1m=Math.max(lam1m,lam1); lam2m=Math.max(lam2m,lam2);
+    const lam1e=Math.min(lam1,LAM_STRETCH_CAP), lam2e=Math.min(lam2,LAM_STRETCH_CAP);
+    const lam3=1/(lam1e*lam2e); const I1=lam1e*lam1e+lam2e*lam2e+lam3*lam3;
+    W+=0.5*MU*(I1-3)*H0*A0;
+  }
+  return {lam1:lam1m, lam2:lam2m, W};
+}
+/** Analytic dW/dx for one membrane sample with F=[e1 e2]*inv (3×2), area A0 — same constitutive as tri. */
+function accumMemForceFromF(e1,e2,inv,A0,nodeGather){
+  // e1,e2 are 3-vectors (columns of dx/dξ before *inv); nodeGather(g1,g2) applies chain to nodes
+  // dW/dlam = MU*H0*A0*(lam - lam3^2/lam) from W=0.5*MU*(I1-3)*H0*A0 (I1=l1^2+l2^2+l3^2)
+  // Prior scaleW=0.5*MU*H0 made analytic forces 0.5× vs FD/energy — fix shared tri+quad path.
+  const LAM_CAP=LAM_STRETCH_CAP, scaleW=MU*H0;
+  const i00=inv[0], i01=inv[1], i10=inv[2], i11=inv[3];
+  const F00=e1[0]*i00+e2[0]*i10, F01=e1[0]*i01+e2[0]*i11;
+  const F10=e1[1]*i00+e2[1]*i10, F11=e1[1]*i01+e2[1]*i11;
+  const F20=e1[2]*i00+e2[2]*i10, F21=e1[2]*i01+e2[2]*i11;
+  const C00=F00*F00+F10*F10+F20*F20, C01=F00*F01+F10*F11+F20*F21, C11=F01*F01+F11*F11+F21*F21;
+  const tr=C00+C11, detC=C00*C11-C01*C01;
+  const disc=Math.sqrt(Math.max(0,0.25*tr*tr-detC));
+  let l1sq=Math.max(1e-12,0.5*tr+disc), l2sq=Math.max(1e-12,0.5*tr-disc);
+  const wr1=l1sq<1, wr2=l2sq<1;
+  if(wr1)l1sq=1; if(wr2)l2sq=1;
+  const lam1=Math.sqrt(l1sq), lam2=Math.sqrt(l2sq);
+  lamMax=Math.max(lamMax,lam1,lam2);
+  const cap1=lam1>LAM_CAP, cap2=lam2>LAM_CAP;
+  const lam1e=cap1?LAM_CAP:lam1, lam2e=cap2?LAM_CAP:lam2;
+  const lam3=1/(lam1e*lam2e);
+  const dWd1=scaleW*A0*(lam1e - (lam3*lam3)/lam1e);
+  const dWd2=scaleW*A0*(lam2e - (lam3*lam3)/lam2e);
+  const d1dlam1=(cap1||wr1)?0:1;
+  const d2dlam2=(cap2||wr2)?0:1;
+  const dlam1_dlsq=d1dlam1/(2*lam1);
+  const dlam2_dlsq=d2dlam2/(2*lam2);
+  const dW_dl1sq=dWd1*dlam1_dlsq;
+  const dW_dl2sq=dWd2*dlam2_dlsq;
+  let dDisc_dC00=0,dDisc_dC11=0,dDisc_dC01=0;
+  if(disc>1e-14){
+    const inv2d=1/(2*disc);
+    dDisc_dC00=inv2d*(0.5*tr - C11);
+    dDisc_dC11=inv2d*(0.5*tr - C00);
+    dDisc_dC01=inv2d*(2*C01);
+  }
+  const dl1_dC00=0.5+dDisc_dC00, dl1_dC11=0.5+dDisc_dC11, dl1_dC01=dDisc_dC01;
+  const dl2_dC00=0.5-dDisc_dC00, dl2_dC11=0.5-dDisc_dC11, dl2_dC01=-dDisc_dC01;
+  const S00=dW_dl1sq*dl1_dC00 + dW_dl2sq*dl2_dC00;
+  const S11=dW_dl1sq*dl1_dC11 + dW_dl2sq*dl2_dC11;
+  const S01=dW_dl1sq*dl1_dC01 + dW_dl2sq*dl2_dC01;
+  const P00=2*F00*S00+F01*S01, P01=F00*S01+2*F01*S11;
+  const P10=2*F10*S00+F11*S01, P11=F10*S01+2*F11*S11;
+  const P20=2*F20*S00+F21*S01, P21=F20*S01+2*F21*S11;
+  const g1x=P00*i00+P01*i01, g1y=P10*i00+P11*i01, g1z=P20*i00+P21*i01;
+  const g2x=P00*i10+P01*i11, g2y=P10*i10+P11*i11, g2z=P20*i10+P21*i11;
+  nodeGather(g1x,g1y,g1z,g2x,g2y,g2z);
+}
+function forcesTriMembraneAnalytic(i,j,k,A0,inv){
+  const x0=[pos[3*i],pos[3*i+1],pos[3*i+2]], x1=[pos[3*j],pos[3*j+1],pos[3*j+2]], x2=[pos[3*k],pos[3*k+1],pos[3*k+2]];
+  const e1=sub(x1,x0), e2=sub(x2,x0);
+  accumMemForceFromF(e1,e2,inv,A0,(g1x,g1y,g1z,g2x,g2y,g2z)=>{
+    force[3*i]  -= (-g1x-g2x); force[3*i+1]-= (-g1y-g2y); force[3*i+2]-= (-g1z-g2z);
+    force[3*j]  -= g1x; force[3*j+1]-= g1y; force[3*j+2]-= g1z;
+    force[3*k]  -= g2x; force[3*k+1]-= g2y; force[3*k+2]-= g2z;
+  });
+}
+function forcesQuadMembraneAnalytic(q){
+  const rq=restQ[q]; const ids=rq.ids;
+  if(rq.triA && rq.warpSplit){
+    forcesTriMembraneAnalytic(rq.triA.i,rq.triA.j,rq.triA.k,rq.triA.A0,rq.triA.inv);
+    forcesTriMembraneAnalytic(rq.triB.i,rq.triB.j,rq.triB.k,rq.triB.A0,rq.triB.inv);
+    return;
+  }
+  for(let g=0;g<4;g++){
+    const gp=rq.gps[g]; const inv=gp.inv; const A0=gp.A0;
+    const dNxi=gp.dNxi, dNeta=gp.dNeta;
+    let e10=0,e11=0,e12=0, e20=0,e21=0,e22=0;
+    for(let a=0;a<4;a++){
+      const id=ids[a], bx=pos[3*id], by=pos[3*id+1], bz=pos[3*id+2];
+      const nx=dNxi[a], ny=dNeta[a];
+      e10+=bx*nx; e11+=by*nx; e12+=bz*nx;
+      e20+=bx*ny; e21+=by*ny; e22+=bz*ny;
+    }
+    const e1=[e10,e11,e12], e2=[e20,e21,e22];
+    accumMemForceFromF(e1,e2,inv,A0,(g1x,g1y,g1z,g2x,g2y,g2z)=>{
+      // eξ = Σ x_a dNξ_a, eη = Σ x_a dNη_a → ∂W/∂x_a = g1*dNξ_a + g2*dNη_a
+      for(let a=0;a<4;a++){
+        const id=ids[a], nx=dNxi[a], ny=dNeta[a];
+        force[3*id]  -= (g1x*nx + g2x*ny);
+        force[3*id+1]-= (g1y*nx + g2y*ny);
+        force[3*id+2]-= (g1z*nx + g2z*ny);
+      }
+    });
+  }
+}
+function addPressureTriIJK(i,j,k,s){
+  const xi=pos[3*i], yi=pos[3*i+1], zi=pos[3*i+2];
+  const xj=pos[3*j], yj=pos[3*j+1], zj=pos[3*j+2];
+  const xk=pos[3*k], yk=pos[3*k+1], zk=pos[3*k+2];
+  force[3*i]  += s*(yj*zk - zj*yk);
+  force[3*i+1]+= s*(zj*xk - xj*zk);
+  force[3*i+2]+= s*(xj*yk - yj*xk);
+  force[3*j]  += s*(yk*zi - zk*yi);
+  force[3*j+1]+= s*(zk*xi - xk*zi);
+  force[3*j+2]+= s*(xk*yi - yk*xi);
+  force[3*k]  += s*(yi*zj - zi*yj);
+  force[3*k+1]+= s*(zi*xj - xi*zj);
+  force[3*k+2]+= s*(xi*yj - yi*xj);
+}
+function syncGasPressure(){
+  if(gasNRT==null) return;
+  const V=Math.max(volume(), 1e-12);
+  pressure=gasNRT/V;
+}
+function addPressureOnTris(){
+  // f = p·∂V/∂x for volume() over oriented `tris` (closed → Σf≈0).
+  syncGasPressure();
+  if(!pressure) return;
+  const s=pressure/6;
+  for(let t=0;t<tris.length;t++){
+    const [i,j,k]=tris[t]; addPressureTriIJK(i,j,k,s);
+  }
+}
+function energy(){
+  let W=0; lamMax=1;
+  if(USE_QUAD_MEMBRANE && restQ.length){
+    for(let q=0;q<restQ.length;q++){ const s=quadW(q); W+=s.W; lamMax=Math.max(lamMax,s.lam1,s.lam2); }
+    for(let t=0;t<orphanTris.length;t++){
+      const [i,j,k]=orphanTris[t]; const {A0,inv}=orphanRest[t];
+      const s=triWAt(i,j,k,A0,inv); W+=s.W; lamMax=Math.max(lamMax,s.lam1,s.lam2);
+    }
+  } else {
+    for(let t=0;t<tris.length;t++){const s=triW(t);W+=s.W;lamMax=Math.max(lamMax,s.lam1,s.lam2);}
+  }
+  if(!Number.isFinite(lamMax))lamMax=99; warn=lamMax>=WARN_LAM;
+  const V=Math.max(volume(), 1e-12);
+  if(gasNRT!=null) return W - gasNRT*Math.log(V);
+  return W - pressure*V;
+}
+function forces(){
+  syncGasPressure();
+  force.fill(0); lamMax=1;
+  if(USE_QUAD_MEMBRANE && restQ.length){
+    if(!ANALYTIC_FORCES){
+      const eps=1e-7;
+      for(let q=0;q<restQ.length;q++){
+        const s0=quadW(q); lamMax=Math.max(lamMax,s0.lam1,s0.lam2);
+        const ids=restQ[q].ids;
+        for(const id of ids) for(let c=0;c<3;c++){
+          const saved=pos[3*id+c]; const W0=s0.W; pos[3*id+c]=saved+eps; const Wp=quadW(q).W; pos[3*id+c]=saved;
+          force[3*id+c]-=(Wp-W0)/eps;
+        }
+      }
+      for(let t=0;t<orphanTris.length;t++){
+        const [i,j,k]=orphanTris[t]; const {A0,inv}=orphanRest[t];
+        const s0=triWAt(i,j,k,A0,inv); lamMax=Math.max(lamMax,s0.lam1,s0.lam2);
+        for(const id of [i,j,k]) for(let c=0;c<3;c++){
+          const saved=pos[3*id+c]; const W0=s0.W; pos[3*id+c]=saved+eps;
+          const Wp=triWAt(i,j,k,A0,inv).W; pos[3*id+c]=saved;
+          force[3*id+c]-=(Wp-W0)/eps;
+        }
+      }
+      addPressureOnTris();
+      if(!Number.isFinite(lamMax))lamMax=99; warn=lamMax>=WARN_LAM; return;
+    }
+    for(let q=0;q<restQ.length;q++) forcesQuadMembraneAnalytic(q);
+    for(let t=0;t<orphanTris.length;t++){
+      const [i,j,k]=orphanTris[t]; const {A0,inv}=orphanRest[t];
+      forcesTriMembraneAnalytic(i,j,k,A0,inv);
+    }
+    addPressureOnTris();
+    if(!Number.isFinite(lamMax))lamMax=99; warn=lamMax>=WARN_LAM; return;
+  }
+  if(!ANALYTIC_FORCES){
+    const eps=1e-7;
+    for(let t=0;t<tris.length;t++){
+      const s0=triW(t); lamMax=Math.max(lamMax,s0.lam1,s0.lam2);
+      for(const id of [s0.i,s0.j,s0.k]) for(let c=0;c<3;c++){const saved=pos[3*id+c]; const W0=s0.W; pos[3*id+c]=saved+eps; const Wp=triW(t).W; pos[3*id+c]=saved; force[3*id+c]-=(Wp-W0)/eps;}
+    }
+    addPressureOnTris();
+    if(!Number.isFinite(lamMax))lamMax=99; warn=lamMax>=WARN_LAM; return;
+  }
+  // Analytic membrane neo-Hookean + wrinkle clamp (same μ, same W as triW)
+  for(let t=0;t<tris.length;t++){
+    const [i,j,k]=tris[t]; const {A0,inv}=rest[t];
+    forcesTriMembraneAnalytic(i,j,k,A0,inv);
+  }
+  addPressureOnTris();
+  if(!Number.isFinite(lamMax))lamMax=99; warn=lamMax>=WARN_LAM;
+}
+
+
+/** Orient `tris` as a consistently wound closed manifold (flood-fill across shared edges).
+ *  Centroid "outward" heuristics fail on non-convex letter shells (A hole/concavities) and
+ *  leave inward faces — those make Σ p·∂V/∂x ≠ 0 so membrane (∑f≡0) can never balance
+ *  pressure (Chiron §9 residual floor ~0.03). Sync faceTris to the same windings. */
+function orientTrisClosedManifold(){
+  const T=tris.length;
+  if(!T) return;
+  function ek(a,b){ return (a<b) ? (a+"_"+b) : (b+"_"+a); }
+  function buildAdj(){
+    const em=new Map();
+    for(let t=0;t<T;t++){
+      const [i,j,k]=tris[t];
+      for(const [a,b] of [[i,j],[j,k],[k,i]]){
+        const key=ek(a,b);
+        let arr=em.get(key); if(!arr){ arr=[]; em.set(key,arr); }
+        arr.push([t,a,b]);
+      }
+    }
+    return em;
+  }
+  let em=buildAdj();
+  const seen=new Uint8Array(T);
+  let nFlip=0, nComp=0;
+  let seed=0, best=-Infinity;
+  for(let t=0;t<T;t++){
+    const [i,j,k]=tris[t];
+    const n=cross(
+      sub([pos0[3*j],pos0[3*j+1],pos0[3*j+2]],[pos0[3*i],pos0[3*i+1],pos0[3*i+2]]),
+      sub([pos0[3*k],pos0[3*k+1],pos0[3*k+2]],[pos0[3*i],pos0[3*i+1],pos0[3*i+2]])
+    );
+    if(n[2]>best){ best=n[2]; seed=t; }
+  }
+  for(let pass=0; pass<T; pass++){
+    const s=(pass===0)?seed:pass;
+    if(seen[s]) continue;
+    nComp++;
+    const stack=[s];
+    seen[s]=1;
+    while(stack.length){
+      const t=stack.pop();
+      const [i,j,k]=tris[t];
+      for(const [a,b] of [[i,j],[j,k],[k,i]]){
+        const arr=em.get(ek(a,b));
+        if(!arr) continue;
+        for(const [tn,an,bn] of arr){
+          if(tn===t || seen[tn]) continue;
+          if(an===a && bn===b){
+            // same directed edge → flip neighbor
+            const tmp=tris[tn][1]; tris[tn][1]=tris[tn][2]; tris[tn][2]=tmp;
+            nFlip++;
+            em=buildAdj(); // windings changed
+          }
+          seen[tn]=1;
+          stack.push(tn);
+        }
+      }
+    }
+  }
+  let V0=0;
+  for(const [i,j,k] of tris){
+    const x0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]],x1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]],x2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+    V0+=x0[0]*(x1[1]*x2[2]-x1[2]*x2[1])+x0[1]*(x1[2]*x2[0]-x1[0]*x2[2])+x0[2]*(x1[0]*x2[1]-x1[1]*x2[0]);
+  }
+  V0/=6;
+  if(V0<0){
+    for(const tri of tris){ const tmp=tri[1]; tri[1]=tri[2]; tri[2]=tmp; }
+    nFlip+=T; V0=-V0;
+  }
+  if(faceTris && faceTris.length){
+    const wind=new Map();
+    for(const tri of tris){
+      wind.set([tri[0],tri[1],tri[2]].slice().sort((a,b)=>a-b).join(','), tri.slice());
+    }
+    let nSync=0;
+    for(const ft of faceTris){
+      const w=wind.get(ft.slice().sort((a,b)=>a-b).join(','));
+      if(w && (ft[0]!==w[0]||ft[1]!==w[1]||ft[2]!==w[2])){ ft[0]=w[0]; ft[1]=w[1]; ft[2]=w[2]; nSync++; }
+    }
+    if(nSync) console.log('[orient] synced faceTris', nSync);
+  }
+  console.log('[orient] manifold comps', nComp, 'flips', nFlip, 'V0', V0.toExponential(4));
+}
+
+
+/** Rebuild restQ.triA/B (+orphan rest) from manifold-oriented `tris`.
+ *  Guarantees membrane CST surface ≡ volume/pressure cover (Chiron §8/§9). */
+function rebuildMembraneTrisFromOrientedCover(){
+  const by3=new Map();
+  for(const tri of tris){
+    by3.set([tri[0],tri[1],tri[2]].slice().sort((a,b)=>a-b).join(','), tri.slice());
+  }
+  function restFrom(i,j,k){
+    const p0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]], p1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]], p2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+    const e1=sub(p1,p0), e2=sub(p2,p0);
+    const {t:te,b:be}=orthonormal(nrm(cross(e1,e2)));
+    const r1=[dot(e1,te),dot(e1,be)], r2=[dot(e2,te),dot(e2,be)];
+    const detR=r1[0]*r2[1]-r1[1]*r2[0];
+    if(!Number.isFinite(detR)||Math.abs(detR)<1e-18) return null;
+    return {i,j,k,A0:0.5*Math.abs(detR), inv:[r2[1]/detR,-r2[0]/detR,-r1[1]/detR,r1[0]/detR]};
+  }
+  let nOk=0, nMiss=0;
+  for(const rq of restQ){
+    const S=new Set(rq.ids);
+    const cover=[];
+    for(const tri of tris){
+      if(S.has(tri[0])&&S.has(tri[1])&&S.has(tri[2])) cover.push(tri);
+    }
+    if(cover.length>=2){
+      const a=restFrom(cover[0][0],cover[0][1],cover[0][2]);
+      const b=restFrom(cover[1][0],cover[1][1],cover[1][2]);
+      if(a&&b){ rq.triA=a; rq.triB=b; nOk++; continue; }
+    }
+    nMiss++;
+  }
+  // Orphans: keep only those present in oriented tris, with that winding
+  const keepT=[], keepR=[];
+  for(let t=0;t<orphanTris.length;t++){
+    const key=orphanTris[t].slice().sort((a,b)=>a-b).join(',');
+    const w=by3.get(key);
+    if(!w) continue;
+    const r=restFrom(w[0],w[1],w[2]);
+    if(!r) continue;
+    keepT.push([w[0],w[1],w[2]]);
+    keepR.push({A0:r.A0, inv:r.inv});
+  }
+  orphanTris=keepT; orphanRest=keepR;
+  console.log('[orient] rebuilt membrane from oriented tris', 'quadsOk', nOk, 'quadsMiss', nMiss, 'orphans', orphanTris.length);
+}
+
+/** Load Gmsh DelQuad+Blossom bake JSON → rest mesh; exposes window.quads CCW [i,j,k,l]. */
+function applyBakeMesh(L, data){
+  letter=L;
+  BAKE_MODE=true;
+  pos0 = Float64Array.from(data.pos0);
+  pos = Float64Array.from(data.pos0);
+  quads = (data.quads||[]).map(q=>q.slice());
+  faceTris = (data.faceTris||[]).map(tr=>tr.slice());
+  // Solver path uses tris: prefer provided splits, else split quads + faceTris
+  if(data.tris && data.tris.length){
+    tris = data.tris.map(tr=>tr.slice());
+  } else {
+    tris = [];
+    for(const q of quads){ tris.push([q[0],q[1],q[2]], [q[0],q[2],q[3]]); }
+    for(const tr of faceTris) tris.push(tr);
+  }
+  window.quads = quads;
+  window.faceTris = faceTris;
+  N = pos0.length/3;
+  const zF=DEPTH/2, zB=-DEPTH/2;
+  seamW=new Array(N).fill(1);
+
+  orientTrisClosedManifold();
+  {
+    const good=[];
+    for(const tri of tris){
+      const [i,j,k]=tri;
+      const e1=sub([pos0[3*j],pos0[3*j+1],pos0[3*j+2]],[pos0[3*i],pos0[3*i+1],pos0[3*i+2]]);
+      const e2=sub([pos0[3*k],pos0[3*k+1],pos0[3*k+2]],[pos0[3*i],pos0[3*i+1],pos0[3*i+2]]);
+      if(len(cross(e1,e2))>1e-14) good.push(tri);
+    }
+    tris=good;
+  }
+  {
+    const kept=[], rest2=[];
+    for(const tri of tris){
+      const [i,j,k]=tri;
+      const p0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]], p1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]], p2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]];
+      const e1=sub(p1,p0), e2=sub(p2,p0);
+      const {t:te,b:be}=orthonormal(nrm(cross(e1,e2)));
+      const r1=[dot(e1,te),dot(e1,be)], r2=[dot(e2,te),dot(e2,be)];
+      const detR=r1[0]*r2[1]-r1[1]*r2[0];
+      if(!Number.isFinite(detR) || Math.abs(detR)<1e-18) continue;
+      kept.push(tri);
+      rest2.push({A0:0.5*Math.abs(detR), inv:[r2[1]/detR,-r2[0]/detR,-r1[1]/detR,r1[0]/detR]});
+    }
+    tris=kept; rest=rest2;
+  }
+  buildRestQFromQuads();
+  buildOrphanRestFromFaceTris();
+  pruneQuadmemSliverOrphans();
+  // Critical for Chiron §9: CST membrane must use the same oriented tris as volume/pressure.
+  if(USE_QUAD_MEMBRANE) rebuildMembraneTrisFromOrientedCover();
+  if(USE_QUAD_MEMBRANE){
+    console.log("[quadmem] restQ", restQ.length, "orphanTris", orphanTris.length, "trisCover", tris.length, "MU", MU);
+  }
+  force=new Float64Array(N*3); ensureMinimizeScratch(N*3);
+  idx=new Uint32Array(tris.length*3);
+  for(let t=0;t<tris.length;t++){idx[t*3]=tris[t][0];idx[t*3+1]=tris[t][1];idx[t*3+2]=tris[t][2];}
+  const edgeSet=new Set();
+  for(const [i,j,k] of tris){
+    for(const [a,b] of [[i,j],[j,k],[k,i]]) edgeSet.add(Math.min(a,b)+"_"+Math.max(a,b));
+  }
+  edgeIdx=new Uint32Array(edgeSet.size*2);
+  { let e=0; for(const k of edgeSet){ const [a,b]=k.split("_").map(Number); edgeIdx[e++]=a; edgeIdx[e++]=b; } }
+  {
+    const ec=new Map();
+    for(const [i,j,k] of tris){
+      for(const [a,b] of [[i,j],[j,k],[k,i]]){
+        const key=Math.min(a,b)+"_"+Math.max(a,b);
+        ec.set(key,(ec.get(key)||0)+1);
+      }
+    }
+    const free=[];
+    for(const [k,c] of ec){ if(c===1){ const [a,b]=k.split("_").map(Number); free.push(a,b); } }
+    freeEdgeIdx=new Uint32Array(free);
+  }
+  contactPairs=[];
+  {
+    const front=new Map(), back=new Map();
+    const xyKey=(x,y)=> (Math.round(x*1e7)/1e7).toFixed(7)+","+(Math.round(y*1e7)/1e7).toFixed(7);
+    for(let id=0;id<N;id++){
+      const x=pos0[3*id], y=pos0[3*id+1], z=pos0[3*id+2];
+      if(Math.abs(z-zF)<1e-7) front.set(xyKey(x,y), id);
+      else if(Math.abs(z-zB)<1e-7) back.set(xyKey(x,y), id);
+    }
+    for(const [k,i] of front){ if(back.has(k)) contactPairs.push([i, back.get(k)]); }
+  }
+  contactAdj=Array.from({length:N},()=>new Set());
+  for(let e=0;e<edgeIdx.length;e+=2){
+    const a=edgeIdx[e], b=edgeIdx[e+1];
+    contactAdj[a].add(b); contactAdj[b].add(a);
+  }
+  console.log("[contact] pairs", contactPairs.length, "KISS", CONTACT_KISS, "(bake)");
+  {
+    const nFree = freeEdgeIdx ? (freeEdgeIdx.length/2)|0 : 0;
+    window.__MESH_DIAG__ = {letter:L, N, tris:tris.length, quads:quads.length, edges:(edgeIdx.length/2)|0, freeEdges:nFree, mesh:"gmsh-alg9-packing-blossom", gmshLoaded:true};
+    const ban=document.getElementById("meshDiagBanner");
+    const diagOn = new URLSearchParams(location.search).get("meshdiag")==="1";
+    if(ban && diagOn){
+      ban.style.display="block";
+      ban.innerHTML="<strong>MESH-DIAG · "+L+"</strong> · Gmsh alg9 packing+Blossom bake<br/>nodes="+N+" · quads="+quads.length+" · tris="+tris.length+" · free="+nFree+" · yellow=nodes · cyan=wire · <span style=\"color:#ff7a7a\">red=free</span>";
+    }
+    console.log("[meshdiag]", window.__MESH_DIAG__);
+  }
+  let V=0; for(const [i,j,k] of tris){const x0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]],x1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]],x2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]]; V+=dot(x0,cross(sub(x1,x0),sub(x2,x0)));}
+  V/=6;
+  const meta=data.meta||{};
+  meshMeta={letter:L, font:FONT_USED, depth_m:DEPTH, shell:"gmsh-alg9-quad-shell", N, tris:tris.length, quads:quads.length, V_mL:V*1e6, bake:meta};
+  document.getElementById("meshLabel").textContent=
+    `Gmsh alg9 packing+Blossom · ${L} · ${N}v / ${quads.length}q / ${tris.length}t · V₀ ${(V*1e6).toFixed(1)} mL · window.quads ON`+(USE_QUAD_MEMBRANE?` · quadmem restQ=${restQ.length}`:"");
+  bufIdxReady=false;
+  console.log("[mesh bake]", meshMeta);
+}
+
+function resetMesh(){for(let i=0;i<pos.length;i++)pos[i]=pos0[i];lamMax=1;warn=false;tipSettledFor=-1; gasNRT=null; if(typeof clearContactActive==="function") clearContactActive();}
+function recenter(){let cx=0,cy=0,cz=0;for(let i=0;i<N;i++){cx+=pos[3*i];cy+=pos[3*i+1];cz+=pos[3*i+2];}cx/=N;cy/=N;cz/=N;for(let i=0;i<N;i++){pos[3*i]-=cx;pos[3*i+1]-=cy;pos[3*i+2]-=cz;}}
+// SoA / layout: pos+force already contiguous Float64Array (xyz interleaved).
+// Hot-loop backups: reuse Float64Array scratch + copyInto (no pos.slice()/GC per iter).
+function copyInto(dst, src){
+  // dst must be a pre-sized Float64Array (see ensureMinimizeScratch).
+  dst.set(src);
+  return dst;
+}
+let _posBak = null, _posBak2 = null, _forceBak = null, _bestPos = null;
+let _hasBestPos = false;
+function ensureMinimizeScratch(n){
+  if(!_posBak || _posBak.length !== n){
+    _posBak = new Float64Array(n);
+    _posBak2 = new Float64Array(n);
+    _forceBak = new Float64Array(n);
+    _bestPos = new Float64Array(n);
+  }
+  _hasBestPos = false;
+}
+
+// Contact hash scratch (reuse across calls — Kareem PR1 / PR1b / Phase 0.2 active-set)
+let _cBucketMap=new Map();
+let _cBucketPool=[];
+let _cCellList=[];
+let _cVisited=new Set();
+let lastContactMs=0, lastContactPushed=0;
+let _cActiveI=new Int32Array(256), _cActiveJ=new Int32Array(256), _cActiveN=0;
+let _cApplyCount=0;
+function clearContactActive(){_cActiveN=0; _cApplyCount=0;}
+function _cEnsureActive(n){
+  if(_cActiveI.length>=n) return;
+  const cap=Math.max(n, _cActiveI.length*2);
+  const ni=new Int32Array(cap), nj=new Int32Array(cap);
+  ni.set(_cActiveI.subarray(0,_cActiveN)); nj.set(_cActiveJ.subarray(0,_cActiveN));
+  _cActiveI=ni; _cActiveJ=nj;
+}
+function applyContact(doProx, forceFull){
+  // Kiss bar: free until ENGAGE (3 mm); if d < KISS separate to kiss. No air-gap hold.
+  // PR1b: int cell keys + reused buckets. Phase 0.2: active-set narrowphase between full-hash refreshes.
+  // No skip-second-apply (accuracy). forceFull=true forces broadphase rebuild.
+  const tC0=(typeof performance!=="undefined")?performance.now():0;
+  if(doProx===undefined) doProx=true;
+  if(forceFull===undefined) forceFull=false;
+  const kiss=CONTACT_KISS, engage=CONTACT_ENGAGE;
+  const maxPush=engage*0.9;
+  const share=0.55;
+  const restMin=Math.max(0.010, LH/(BASE*1.15));
+  let pushed=0;
+  function separate(i,j){
+    const dx=pos[3*j]-pos[3*i], dy=pos[3*j+1]-pos[3*i+1], dz=pos[3*j+2]-pos[3*i+2];
+    const d=Math.hypot(dx,dy,dz);
+    if(d>=engage || d<1e-12) return d;
+    const amt=Math.min(maxPush, (kiss-d)*share);
+    if(amt>0){
+      const inv=1/d;
+      const ox=dx*inv*amt, oy=dy*inv*amt, oz=dz*inv*amt;
+      pos[3*i]-=ox; pos[3*i+1]-=oy; pos[3*i+2]-=oz;
+      pos[3*j]+=ox; pos[3*j+1]+=oy; pos[3*j+2]+=oz;
+      pushed++;
+    }
+    return d;
+  }
+  for(let p=0;p<contactPairs.length;p++) separate(contactPairs[p][0], contactPairs[p][1]);
+  if(!doProx){
+    lastContactPushed=pushed;
+    if(typeof performance!=="undefined") lastContactMs=performance.now()-tC0;
+    return pushed;
+  }
+  _cApplyCount++;
+  const useActive = ACTIVE_SET && !FAST_CONTACT;
+  const doFull = forceFull || !useActive || _cActiveN===0 || ((_cApplyCount%ACTIVE_REFRESH)===0);
+
+  if(!doFull){
+    // Active-set only: separate tracked prox pairs; drop those that left the engage band.
+    let w=0;
+    for(let k=0;k<_cActiveN;k++){
+      const i=_cActiveI[k], j=_cActiveJ[k];
+      const d=separate(i,j);
+      if(d!=null && d<engage && d>=1e-12){
+        _cActiveI[w]=i; _cActiveJ[w]=j; w++;
+      }
+    }
+    _cActiveN=w;
+    lastContactPushed=pushed;
+    if(typeof performance!=="undefined") lastContactMs=performance.now()-tC0;
+    return pushed;
+  }
+
+  // Full broadphase → rebuild active set
+  const invC=1/engage;
+  const B=512, S=1024;
+  function pack(ix,iy,iz){return ((ix+B)|0)+(((iy+B)|0)*S)+(((iz+B)|0)*S*S);}
+  function clearBuckets(){
+    for(let i=0;i<_cCellList.length;i++){
+      const arr=_cBucketMap.get(_cCellList[i]);
+      if(arr){arr.length=0; _cBucketPool.push(arr);}
+    }
+    _cBucketMap.clear();
+    _cCellList.length=0;
+  }
+  let newN=0;
+  function trackActive(i,j,d){
+    if(d==null || d>=engage || d<1e-12) return;
+    _cEnsureActive(newN+1);
+    _cActiveI[newN]=i; _cActiveJ[newN]=j; newN++;
+  }
+  const nSweep=FAST_CONTACT?1:2;
+  for(let sweep=0;sweep<nSweep;sweep++){
+    clearBuckets();
+    for(let i=0;i<N;i++){
+      const ix=Math.floor(pos[3*i]*invC), iy=Math.floor(pos[3*i+1]*invC), iz=Math.floor(pos[3*i+2]*invC);
+      const k=pack(ix,iy,iz);
+      let arr=_cBucketMap.get(k);
+      if(!arr){
+        arr=_cBucketPool.pop()||[];
+        _cBucketMap.set(k,arr);
+        _cCellList.push(k);
+      }
+      arr.push(i);
+    }
+    _cVisited.clear();
+    if(sweep===0) newN=0; // rebuild active from last sweep's contacts (prefer final geometry)
+    const nN=N;
+    for(let ci=0;ci<_cCellList.length;ci++){
+      const ck=_cCellList[ci];
+      const ids=_cBucketMap.get(ck);
+      const iz0=((ck/(S*S))|0)-B, rem=ck-(iz0+B)*S*S;
+      const iy0=((rem/S)|0)-B, ix0=(rem%S)-B;
+      for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++)for(let oz=-1;oz<=1;oz++){
+        const nbr=_cBucketMap.get(pack(ix0+ox,iy0+oy,iz0+oz));
+        if(!nbr) continue;
+        for(let a=0;a<ids.length;a++){
+          const i=ids[a];
+          for(let b=0;b<nbr.length;b++){
+            const j=nbr[b];
+            if(j<=i) continue;
+            if(contactAdj[i].has(j)) continue;
+            const pk=i*nN+j; if(_cVisited.has(pk)) continue; _cVisited.add(pk);
+            const rdx=pos0[3*j]-pos0[3*i], rdy=pos0[3*j+1]-pos0[3*i+1], rdz=pos0[3*j+2]-pos0[3*i+2];
+            if(Math.hypot(rdx,rdy,rdz)<restMin) continue;
+            const d=separate(i,j);
+            if(sweep===nSweep-1) trackActive(i,j,d);
+          }
+        }
+      }
+    }
+  }
+  _cActiveN=newN;
+  lastContactPushed=pushed;
+  if(typeof performance!=="undefined") lastContactMs=performance.now()-tC0;
+  return pushed;
+}
+function minimize(iters){
+  const t0=performance.now();
+  ensureMinimizeScratch(pos.length);
+  let alpha=2.5e-4; let E=energy(); let used=0;
+  const scaleF=MU*H0*LH, residTol=1e-4, maxDisp=Math.max(1e-5, CONTACT_KISS*0.25);
+  for(let it=0;it<iters;it++){
+    used=it+1;
+    forces(); let f2=0, maxF=0; for(let i=0;i<force.length;i++){ const a=Math.abs(force[i]); if(a>maxF)maxF=a; f2+=force[i]*force[i]; }
+    if(maxF<=residTol*scaleF && it>15) break;
+    const fn=Math.sqrt(f2)||1; copyInto(_posBak, pos);
+    let scale=alpha/Math.max(1, fn/Math.sqrt(force.length));
+    if(maxF*scale>maxDisp) scale=maxDisp/Math.max(maxF,1e-30);
+    for(let i=0;i<pos.length;i++) pos[i]+=scale*force[i];
+    // Beauty: contact every iter. fast=1: every other + no double-apply.
+    // PR1b isolate: keep int-hash+pool; restore post-accept second apply (skip caused V/P drift).
+    if(!FAST_CONTACT || (it%2===0)) applyContact(true); recenter();
+    const En=energy();
+    if(!Number.isFinite(En)||lamMax>3.5){ copyInto(pos, _posBak); energy(); alpha*=0.5; if(alpha<1e-10)break; continue; }
+    if(En<=E+1e-12){
+      E=En;
+      if(!FAST_CONTACT){
+        copyInto(_posBak2, pos);
+        applyContact(true); recenter();
+        const E2=energy();
+        if(!Number.isFinite(E2)||lamMax>3.5){ copyInto(pos, _posBak2); energy(); }
+        else E=E2;
+      }
+      alpha=Math.min(alpha*1.12,1.6e-3); if(fn<0.05&&it>25)break;
+    }
+    else { copyInto(pos, _posBak); energy(); alpha*=0.45; }
+  }
+  {
+    // Final post-minimize contact stays unless explode (force full broadphase)
+    copyInto(_posBak, pos);
+    applyContact(true, true); recenter();
+    energy();
+    if(!Number.isFinite(lamMax)||lamMax>3.5){ copyInto(pos, _posBak); energy(); }
+  }
+  lastSolveMs=performance.now()-t0;
+  lastSolveIters=used;
+  const msg=`${lastSolveMs.toFixed(1)} ms · ${lastSolveIters} iters · P ${Math.round(pressure)} Pa · ${letter}`;
+  const el=document.getElementById("stepMs"); if(el) el.textContent=msg;
+  console.log("[settle]", msg, "λ", lamMax.toFixed(3), "V_mL", (volume()*1e6).toFixed(2));
+  return Number.isFinite(lamMax)?lamMax:null;
+}
+function lambdaFromRest(p,iters){resetMesh(); for(let s=1;s<=8;s++){pressure=p*(s/8); if(minimize(Math.floor(iters/8))==null)return null;} try{document.title=`WARN λ=${lamMax.toFixed(2)} P=${Math.round(p)}`;}catch(e){} return lamMax;}
+
+/** First pressure where λ_max just crosses WARN (target band ≈2.00–2.30). Do NOT pump to λ≈3.5. */
+function findFirstWarnP(deepIters){
+  const it = deepIters||260;
+  const _prog=(s)=>{ try{ document.title=s; }catch(e){} };
+  _prog("WARN search…");
+  let lo=0, hi=60000;
+  let lamHi=lambdaFromRest(hi, it);
+  if(lamHi!=null && lamHi<WARN_LAM){
+    for(let p=hi; p<=200000 && (lamHi==null||lamHi<WARN_LAM); p+=5000){ hi=p; lamHi=lambdaFromRest(hi, it); }
+  }
+  if(lamHi!=null && lamHi>LAM_STRETCH_CAP){
+    let a=5000, b=hi;
+    for(let k=0;k<8;k++){
+      const mid=0.5*(a+b);
+      const lam=lambdaFromRest(mid, it);
+      if(lam!=null && lam>=WARN_LAM){ b=mid; hi=mid; lamHi=lam; }
+      else a=mid;
+    }
+  }
+  let best=hi;
+  for(let k=0;k<12;k++){
+    const mid=0.5*(lo+hi);
+    const lam=lambdaFromRest(mid, it);
+    if(lam==null||lam>=WARN_LAM){ best=mid; hi=mid; }
+    else lo=mid;
+  }
+  let found=Math.max(100, Math.round(best/50)*50);
+  for(let g=0;g<18;g++){
+    const lam=lambdaFromRest(found, it);
+    if(lam!=null && lam>=WARN_LAM && lam<=2.28) return {p:found, lam};
+    if(lam!=null && lam<WARN_LAM) found+=400;
+    else if(lam!=null && lam>2.28) found=Math.max(100, found-350);
+    else found=Math.max(100, found-400);
+  }
+  let lam=lambdaFromRest(found, it);
+  let guard=0;
+  while(lam!=null && lam>2.28 && found>200 && guard++<30){ found=Math.max(100, found-150); lam=lambdaFromRest(found, it); }
+  guard=0;
+  // Coarse climb: contact stiffens shell — need multi-kPa steps to reach λ≥2
+  while((lam==null || lam<WARN_LAM) && found<200000 && guard++<60){
+    found += Math.max(1500, Math.round(found*0.025));
+    lam=lambdaFromRest(found, it);
+  }
+  guard=0;
+  while(lam!=null && lam>2.28 && found>200 && guard++<40){ found=Math.max(100, found-200); lam=lambdaFromRest(found, it); }
+  // Fine settle into [2.00, 2.28]
+  guard=0;
+  while(lam!=null && lam<WARN_LAM && found<200000 && guard++<40){ found+=200; lam=lambdaFromRest(found, it); }
+  guard=0;
+  while(lam!=null && lam>2.28 && found>200 && guard++<40){ found=Math.max(100, found-100); lam=lambdaFromRest(found, it); }
+  return {p:Math.max(100, Math.round(found/50)*50), lam:lam||lamMax};
+}
+
+const canvas=document.getElementById("c");
+const gl=canvas.getContext("webgl2",{alpha:false, antialias:true, preserveDrawingBuffer:true});
+if(!gl){ document.body.insertAdjacentHTML("beforeend","<p style='color:#ffb454;padding:20px'>WebGL2 required.</p>"); throw new Error("no webgl2"); }
+
+function resize(){const dpr=devicePixelRatio||1; canvas.width=Math.max(1,canvas.clientWidth*dpr); canvas.height=Math.max(1,canvas.clientHeight*dpr); gl.viewport(0,0,canvas.width,canvas.height);}
+window.addEventListener("resize", resize); resize();
+
+const vs=`#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in float aThick; // h/H0 from incompressible membrane
+uniform mat4 uVP;
+uniform vec3 uEye;
+out vec3 vW; out vec3 vN; out float vThick; out vec3 vEye;
+void main(){
+  vW=aPos; vN=normalize(aNrm); vThick=aThick; vEye=uEye;
+  gl_Position=uVP*vec4(aPos,1.0);
+}`;
+const fs=`#version 300 es
+precision highp float;
+in vec3 vW; in vec3 vN; in float vThick; in vec3 vEye;
+uniform float uIOR; uniform vec3 uLight;
+out vec4 o;
+float fresnel(float c, float ior){ float r0=pow((1.0-ior)/(1.0+ior),2.0); float m=1.0-c; return r0+(1.0-r0)*m*m*m*m*m; }
+void main(){
+  vec3 n=normalize(vN); vec3 V=normalize(vEye-vW);
+  if(dot(n,V)<0.0) n=-n;
+  vec3 L=normalize(uLight); vec3 H=normalize(L+V);
+  float NdotV=max(dot(n,V),0.0), NdotL=max(dot(n,L),0.0), NdotH=max(dot(n,H),0.0);
+  float F=fresnel(NdotV,uIOR);
+  // Semi-Clear White — optical path / milkiness / alpha from local film thickness h=H0/(λ1 λ2)
+  vec3 tint=vec3(0.96,0.97,0.98);
+  float hRel=clamp(vThick, 0.12, 2.6); // h/H0
+  // Beer–Lambert (Koios): alpha ≈ 1−exp(−κ h); κH0 dial — not μ
+  float kappaH0=2.15;
+  float alphaCore=clamp(1.0-exp(-kappaH0*hRel), 0.08, 0.58);
+  float path=mix(0.14, 1.35, smoothstep(0.22, 1.7, hRel));
+  vec3 transmit=exp(-path*vec3(0.20,0.22,0.26))*tint;
+  float milk=smoothstep(0.25, 1.55, hRel);
+  vec3 base=mix(transmit, tint*0.70, milk*0.42);
+  // soft industrial gloss — no painted seam/edge chrome
+  float gloss=pow(NdotH, 26.0)*F*0.40 + pow(NdotH, 8.0)*0.11;
+  vec3 col=base*(0.30+0.50*NdotL)*(1.0-F*0.62) + vec3(gloss);
+  float alpha=clamp(alphaCore*mix(0.85, 1.15, F), 0.08, 0.60);
+  o=vec4(col, alpha);
+}`;
+function compile(t,s){const sh=gl.createShader(t); gl.shaderSource(sh,s); gl.compileShader(sh); if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh;}
+const prog=gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const uVP=gl.getUniformLocation(prog,"uVP");
+const uEye=gl.getUniformLocation(prog,"uEye");
+const uIOR=gl.getUniformLocation(prog,"uIOR");
+const uLight=gl.getUniformLocation(prog,"uLight");
+gl.uniform1f(uIOR, IOR);
+gl.uniform3f(uLight, 0.45, 0.85, 0.35);
+
+const bufPos=gl.createBuffer(), bufNrm=gl.createBuffer(), bufSeam=gl.createBuffer(), bufIdx=gl.createBuffer(), bufEdge=gl.createBuffer(), bufFree=gl.createBuffer();
+
+const wireVs=`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uVP;
+void main(){ gl_Position=uVP*vec4(aPos,1.0); }`;
+const wireFs=`#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o=vec4(0.72,0.78,0.88,0.35); }`;
+const freeFs=`#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o=vec4(1.0,0.22,0.28,0.95); }`;
+const nodeVs=`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uVP;
+void main(){ gl_Position=uVP*vec4(aPos,1.0); gl_PointSize=3.0; }`;
+const nodeFs=`#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o=vec4(0.95,0.92,0.55,0.9); }`;
+const wireProg=gl.createProgram();
+gl.attachShader(wireProg, compile(gl.VERTEX_SHADER, wireVs));
+gl.attachShader(wireProg, compile(gl.FRAGMENT_SHADER, wireFs));
+gl.linkProgram(wireProg);
+const freeProg=gl.createProgram();
+gl.attachShader(freeProg, compile(gl.VERTEX_SHADER, wireVs));
+gl.attachShader(freeProg, compile(gl.FRAGMENT_SHADER, freeFs));
+gl.linkProgram(freeProg);
+const nodeProg=gl.createProgram();
+gl.attachShader(nodeProg, compile(gl.VERTEX_SHADER, nodeVs));
+gl.attachShader(nodeProg, compile(gl.FRAGMENT_SHADER, nodeFs));
+gl.linkProgram(nodeProg);
+const uWireVP=gl.getUniformLocation(wireProg,"uVP");
+const uFreeVP=gl.getUniformLocation(freeProg,"uVP");
+const uNodeVP=gl.getUniformLocation(nodeProg,"uVP");
+const wireToggle=document.getElementById("wireToggle");
+const meshDiagOn=new URLSearchParams(location.search).get("meshdiag")==="1";
+if((new URLSearchParams(location.search).get("wire")==="1" || meshDiagOn) && wireToggle) wireToggle.checked=true;
+if(meshDiagOn){
+  const ban=document.getElementById("meshDiagBanner");
+  if(ban){
+    ban.style.display="block";
+    ban.innerHTML="<strong>MESH-DIAG</strong> · current grid+cap-boundary salvage<br/>Gmsh DelQuad bake <em>not loaded</em> · yellow=nodes · cyan wire · <span style=\"color:#ff7a7a\">red=free/boundary edges</span>";
+  }
+}
+
+function syncGpuBuffers(){
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufSeam); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(seamW), gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufEdge); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, edgeIdx, gl.STATIC_DRAW);
+  if(freeEdgeIdx){ gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufFree); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, freeEdgeIdx, gl.STATIC_DRAW); }
+  bufIdxReady=true;
+}
+function uploadMesh(){
+  if(!bufIdxReady) syncGpuBuffers();
+  const nrms=new Float32Array(N*3);
+  const thick=new Float32Array(N); // h/H0
+  const thickW=new Float32Array(N);
+  for(let t=0;t<tris.length;t++){
+    const [i,j,k]=tris[t];
+    const e1=sub([pos[3*j],pos[3*j+1],pos[3*j+2]],[pos[3*i],pos[3*i+1],pos[3*i+2]]);
+    const e2=sub([pos[3*k],pos[3*k+1],pos[3*k+2]],[pos[3*i],pos[3*i+1],pos[3*i+2]]);
+    const nn=cross(e1,e2);
+    for(const id of [i,j,k]){nrms[3*id]+=nn[0];nrms[3*id+1]+=nn[1];nrms[3*id+2]+=nn[2];}
+    // Incompressible membrane: h = H0/(λ1·λ2) — reuse triW stretch
+    const s=triW(t);
+    const lamProd=Math.max(1e-6, s.lam1*s.lam2);
+    const hRel=1/lamProd; // == h/H0
+    const w=Math.max(1e-12, s.A);
+    for(const id of [i,j,k]){ thick[id]+=hRel*w; thickW[id]+=w; }
+  }
+  for(let i=0;i<N;i++){
+    const v=[nrms[3*i],nrms[3*i+1],nrms[3*i+2]]; const l=len(v)||1;
+    nrms[3*i]/=l;nrms[3*i+1]/=l;nrms[3*i+2]/=l;
+    seamW[i]= thickW[i]>0 ? thick[i]/thickW[i] : 1;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm); gl.bufferData(gl.ARRAY_BUFFER, nrms, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufSeam); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(seamW), gl.DYNAMIC_DRAW);
+}
+
+let rotY=0.42, rotX=0.06, dragging=false, lx=0, ly=0;
+if(new URLSearchParams(location.search).get("beauty")==="1"){ rotY=0.42; rotX=0.06; } // Mike: upright in viewport (not tipped on ground)
+canvas.addEventListener("pointerdown", e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener("pointerup", ()=>dragging=false);
+canvas.addEventListener("pointermove", e=>{
+  if(!dragging) return;
+  rotY+=(e.clientX-lx)*0.01; rotX=Math.max(-1.2,Math.min(1.2,rotX+(e.clientY-ly)*0.01));
+  lx=e.clientX; ly=e.clientY;
+});
+
+function matMul(a,b){const o=new Float32Array(16); for(let c=0;c<4;c++)for(let r=0;r<4;r++) o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3]; return o;}
+function perspective(fovy,aspect,near,far){const f=1/Math.tan(fovy/2),nf=1/(near-far); const m=new Float32Array(16); m[0]=f/aspect;m[5]=f;m[10]=(far+near)*nf;m[11]=-1;m[14]=2*far*near*nf; return m;}
+function lookAt(eye,target,up){const z=nrm(sub(eye,target)),x=nrm(cross(up,z)),y=cross(z,x); const m=new Float32Array(16); m[0]=x[0];m[1]=y[0];m[2]=z[0]; m[4]=x[1];m[5]=y[1];m[6]=z[1]; m[8]=x[2];m[9]=y[2];m[10]=z[2]; m[12]=-dot(x,eye);m[13]=-dot(y,eye);m[14]=-dot(z,eye);m[15]=1; return m;}
+
+const pSlider=document.getElementById("pSlider"), pVal=document.getElementById("pVal"), lamEl=document.getElementById("lam"), stEl=document.getElementById("st"), btnAuto=document.getElementById("btnAuto");
+pSlider.addEventListener("input", ()=>{ if(autoBusy)return; targetP=+pSlider.value; pVal.textContent=String(Math.round(targetP)); tipSettledFor=-1; });
+
+btnAuto.onclick=()=>{
+  if(autoBusy)return; autoBusy=true; btnAuto.disabled=true; btnAuto.textContent="Searching first warn…";
+  setTimeout(()=>{
+    const {p:found}=findFirstWarnP(260);
+    pSlider.min="0"; pSlider.max=String(found); pSlider.step=found>5000?"50":"20";
+    targetP=found; pressure=found; tipSettledFor=found;
+    pSlider.value=String(found); pVal.textContent=String(found);
+    btnAuto.textContent="Set slider max from warn"; btnAuto.disabled=false; autoBusy=false;
+  }, 0);
+};
+
+function switchLetter(L){
+  tipSettledFor=-1; pressure=0; targetP=0; warn=false; lamMax=1;
+  pSlider.value="0"; pVal.textContent="0";
+  // Prefer Design-PASS bake JSON for letter switches (ship path)
+  try{
+    const letterWant=L.toUpperCase();
+    const xhr=new XMLHttpRequest();
+    xhr.open("GET", "meshes/"+letterWant+".json", false);
+    xhr.send(null);
+    if(xhr.status===200){ applyBakeMesh(letterWant, JSON.parse(xhr.responseText)); }
+    else { console.warn("[bake] missing meshes/"+letterWant+".json — grid fallback"); buildLetterMesh(L); }
+  }catch(e){ console.warn(e); buildLetterMesh(L); }
+  resetMesh(); energy(); syncGpuBuffers();
+  document.querySelectorAll("#letterRow button").forEach(b=>b.classList.toggle("active", b.getAttribute("data-letter")===L));
+}
+
+document.getElementById("letterRow").addEventListener("click", e=>{
+  const b=e.target.closest("button[data-letter]"); if(!b) return;
+  switchLetter(b.getAttribute("data-letter"));
+});
+
+const qLetter=(new URLSearchParams(location.search).get("letter")||"A").toUpperCase();
+const qBake=(new URLSearchParams(location.search).get("bake")||"").toUpperCase();
+(function bootMesh(){
+  // Ship default: Design-PASS Gmsh bake for letter (A remesh N=1554). ?bake= still wins; missing file → grid fallback.
+  const L=["A","B","C"].includes(qBake)?qBake:(["A","B","C"].includes(qLetter)?qLetter:"A");
+  try{
+    const xhr=new XMLHttpRequest();
+    xhr.open("GET", "meshes/"+L+".json", false);
+    xhr.send(null);
+    if(xhr.status===200){ applyBakeMesh(L, JSON.parse(xhr.responseText)); return; }
+    console.warn("[bake] missing meshes/"+L+".json — grid fallback");
+  }catch(e){ console.warn(e); }
+  buildLetterMesh(L);
+})();
+document.querySelectorAll("#letterRow button").forEach(b=>b.classList.toggle("active", b.getAttribute("data-letter")===letter));
+syncGpuBuffers();
+
+let shotP=+(new URLSearchParams(location.search).get("p")||0);
+const preSettle=new URLSearchParams(location.search).get("presettle")!=="0";
+const stillMode=new URLSearchParams(location.search).get("still")==="1";
+const needWarn=new URLSearchParams(location.search).get("needwarn")==="1";
+window.__STILL_META__={letter, p:0, lam:1, warn:false, meshN:N, depth:DEPTH, font:FONT_USED};
+window.USE_QUAD_MEMBRANE=USE_QUAD_MEMBRANE;
+window.__READY__=false;
+
+function publishMeta(extra){
+  const m=Object.assign({letter, p:pressure|0, lam:lamMax, warn:!!warn, meshN:N, depth:DEPTH, font:FONT_USED, V_mL:volume()*1e6}, extra||{});
+  window.__STILL_META__=m;
+  let el=document.getElementById("stillMeta");
+  if(!el){ el=document.createElement("pre"); el.id="stillMeta"; el.style.cssText="position:fixed;left:-9999px;top:0;font-size:10px"; document.body.appendChild(el); }
+  el.textContent=JSON.stringify(m);
+  return m;
+}
+
+function finishStillBoot(){
+  window.__READY__=true;
+  document.documentElement.setAttribute("data-ready","1");
+  publishMeta();
+}
+
+
+/** Phase 0.3: settle at P from current mesh — no resetMesh. */
+function warmSettleToP(p, iters){
+  pressure=p; targetP=p;
+  return minimize(iters||48);
+}
+/** Phase 0.3: climb/descend to pTarget from current state in pressure steps (no reset). */
+function warmClimbToP(pTarget, stepIters){
+  const it=stepIters||24;
+  pTarget=Math.max(0, Math.round(pTarget));
+  let guard=0;
+  while(Math.abs(pressure-pTarget)>50 && guard++<100){
+    const span=Math.abs(pTarget-pressure);
+    const step=Math.sign(pTarget-pressure)*Math.min(span, Math.max(800, Math.round(Math.abs(pressure||pTarget)*0.04/50)*50||800));
+    pressure=Math.round((pressure+step)/50)*50;
+    if((pTarget-pressure)*step<0) pressure=pTarget; // don't overshoot step
+    targetP=pressure;
+    if(minimize(it)==null) return null;
+  }
+  pressure=pTarget; targetP=pTarget;
+  if(lamMax>2.5){
+    // back off if climb overshot stretch
+    pressure=Math.max(0, Math.round(pressure*0.97/50)*50);
+    targetP=pressure;
+    minimize(it);
+  }
+  return minimize(Math.max(it*2, 48));
+}
+
+
+/** Drive ‖r‖∞/(μ·H₀·L) → tol at warn freeze (dead pressure).
+ *  Preserves warn λ when entered in warn. Contact: end projection only. */
+function settleEquilibrium(maxIters, tol){
+  const scaleF=MU*H0*LH;
+  const residTol=(tol!=null)?tol:1e-4;
+  const maxIt=maxIters||2000;
+  const maxDisp=Math.max(5e-4, 2*H0);
+  const lamCeil=Math.min(LAM_STRETCH_CAP-0.05, 3.45);
+  const keepWarn=(lamMax>=WARN_LAM);
+  const lamFloor=keepWarn?WARN_LAM:0;
+  gasNRT=null;
+  let alpha=2e-4;
+  let best=Infinity;
+  ensureMinimizeScratch(pos.length);
+  _hasBestPos=false;
+  let noImprove=0;
+  for(let it=0; it<maxIt; it++){
+    forces();
+    let maxF=0,f2=0; for(let i=0;i<force.length;i++){ const a=Math.abs(force[i]); if(a>maxF)maxF=a; f2+=force[i]*force[i]; }
+    const resid=maxF/scaleF;
+    if(resid<best && lamMax>=lamFloor){ best=resid; copyInto(_bestPos, pos); _hasBestPos=true; noImprove=0; }
+    else noImprove++;
+    if(resid<=residTol && lamMax>=lamFloor && it>12) break;
+    if(noImprove>80) break; // stuck — keep best warn-feasible state
+    copyInto(_posBak, pos); copyInto(_forceBak, force);
+    const E0=energy();
+    const rms=Math.sqrt(f2/Math.max(1,_forceBak.length))||1;
+    let step=alpha/rms;
+    if(maxF*step>maxDisp) step=maxDisp/Math.max(maxF,1e-30);
+    let ok=false;
+    for(let ls=0; ls<14; ls++){
+      for(let i=0;i<pos.length;i++) pos[i]=_posBak[i]+step*_forceBak[i];
+      recenter();
+      const En=energy();
+      if(!(Number.isFinite(lamMax) && lamMax>=lamFloor && lamMax<lamCeil)){
+        step*=0.5; copyInto(pos, _posBak); continue;
+      }
+      forces();
+      let f2n=0,maxFn=0; for(let i=0;i<force.length;i++){ f2n+=force[i]*force[i]; maxFn=Math.max(maxFn,Math.abs(force[i])); }
+      if(Number.isFinite(f2n) && (f2n<f2 || maxFn<maxF)){
+        ok=true; alpha=Math.min(alpha*1.15, 4e-3); break;
+      }
+      if(Number.isFinite(En) && En<=E0+1e-12){
+        ok=true; alpha=Math.min(alpha*1.1, 4e-3); break;
+      }
+      step*=0.5;
+      copyInto(pos, _posBak);
+    }
+    if(!ok){
+      copyInto(pos, _posBak); energy();
+      alpha*=0.5; if(alpha<1e-14) break;
+    }
+  }
+  if(_hasBestPos) copyInto(pos, _bestPos);
+  applyContact(true,true); recenter(); energy();
+  return lamMax;
+}
+
+
+function warmRampToWarn(fromP, stepIters){
+  // Dead-pressure warm ramp to first λ≥2 (desk path). gasNRT stays null.
+  const it = stepIters||48;
+  resetMesh(); // clears gasNRT
+  let p = Math.max(100, Math.round((fromP||5000)/50)*50);
+  pressure = p; targetP = p;
+  if(minimize(Math.max(80, it*2))==null) return {p, lam:lamMax};
+  let prevP = p, prevLam = lamMax;
+  let guard = 0;
+  while(lamMax < WARN_LAM && p < 220000 && guard++ < 80){
+    try{ document.title = `WARN ramp P${p} λ${lamMax.toFixed(2)}`; }catch(e){}
+    prevP = p; prevLam = lamMax;
+    const dP = Math.max(1500, Math.round(p*0.035/50)*50);
+    p = Math.round((p + dP)/50)*50;
+    pressure = p; targetP = p;
+    if(minimize(it)==null) break;
+  }
+  if(lamMax > 2.35 && prevLam < WARN_LAM && (lamMax - prevLam) > 1e-6){
+    const t = (WARN_LAM - prevLam) / (lamMax - prevLam);
+    let pSec = Math.round((prevP + t*(p - prevP))/50)*50;
+    pSec = Math.max(prevP+50, Math.min(p, pSec));
+    if(!USE_QUAD_MEMBRANE) resetMesh();
+    pressure = prevP; targetP = prevP; minimize(Math.max(60, it));
+    pressure = pSec; targetP = pSec; minimize(Math.max(80, it*2));
+    p = pSec;
+    if(lamMax < WARN_LAM){
+      p = Math.round((p + Math.max(800, p*0.02))/50)*50;
+      pressure = p; targetP = p; minimize(it);
+    }
+  }
+  guard = 0;
+  while(lamMax < WARN_LAM && p < 220000 && guard++ < 40){
+    p = Math.round((p + Math.max(1200, p*0.025))/50)*50;
+    pressure = p; targetP = p; minimize(it);
+  }
+  if(lamMax >= WARN_LAM){
+    let g2=0;
+    while(lamMax > 2.35 && p > 1000 && g2++ < 12){
+      p = Math.round((p * 0.97)/50)*50;
+      pressure = p; targetP = p;
+      minimize(Math.max(80, it*2));
+    }
+    if(lamMax < WARN_LAM){
+      p = Math.round((p + Math.max(500, p*0.015))/50)*50;
+      pressure = p; targetP = p;
+      minimize(Math.max(120, it*2));
+    }
+  }
+  return {p:pressure, lam:lamMax};
+}
+
+
+if(needWarn || (stillMode && shotP<=0 && new URLSearchParams(location.search).get("findwarn")==="1") || new URLSearchParams(location.search).get("ramptowarn")==="1"){
+  const it=+(new URLSearchParams(location.search).get("iters")||48);
+  const fromP=+(new URLSearchParams(location.search).get("fromp")||new URLSearchParams(location.search).get("p")||5000);
+  setTimeout(()=>{
+    const useCold=new URLSearchParams(location.search).get("coldwarn")==="1";
+    const {p:found, lam}= useCold ? findFirstWarnP(Math.max(200, it*4)) : warmRampToWarn(fromP, it);
+    shotP=found; tipSettledFor=found; pressure=found; targetP=found;
+    lamMax = (lam!=null?lam:lamMax); warn=lamMax>=WARN_LAM;
+    pSlider.value=String(found); pVal.textContent=String(found);
+    pSlider.max=String(Math.max(+pSlider.max, found));
+    document.title = `STILL ${letter} P${found} λ${lamMax.toFixed(3)}${warn?' WARN':''}`;
+    publishMeta({p:found, lam:lamMax, warn, meshN:N, ramp:!useCold});
+    finishStillBoot();
+  }, 30);
+} else if(shotP>0){
+  targetP=shotP; pSlider.value=String(shotP); pVal.textContent=String(shotP);
+  if(stillMode){ pSlider.max=String(Math.max(+pSlider.max, shotP)); }
+  if(preSettle){
+    const it=+(new URLSearchParams(location.search).get("iters")|| (stillMode?400:420));
+    setTimeout(()=>{
+      if(needWarn){
+        let pTry=shotP;
+        lambdaFromRest(pTry, it);
+        if(lamMax>2.35){
+          let lo=Math.max(100, Math.round(shotP*0.15)), hi=shotP;
+          for(let k=0;k<12;k++){
+            const mid=0.5*(lo+hi);
+            const lam=lambdaFromRest(mid, Math.floor(it*0.7));
+            if(lam==null||lam>2.35){ hi=mid; continue; }
+            if(lam>=WARN_LAM){ pTry=mid; hi=mid; } else lo=mid;
+          }
+          pTry=Math.round(pTry/50)*50;
+          for(let g=0;g<14;g++){
+            const lam=lambdaFromRest(pTry, it);
+            if(lam!=null&&lam>=WARN_LAM&&lam<=2.30) break;
+            if(lam!=null&&lam<WARN_LAM) pTry+=60; else pTry=Math.max(100,pTry-80);
+          }
+        } else if(lamMax<WARN_LAM){
+          for(let g=0;g<20 && lamMax<WARN_LAM; g++){ pTry+=150; lambdaFromRest(pTry, it); }
+        }
+        shotP=pTry;
+      } else {
+        lambdaFromRest(shotP, it);
+      }
+      tipSettledFor=shotP; pressure=shotP; targetP=shotP;
+      pSlider.value=String(shotP); pVal.textContent=String(shotP);
+      if(stillMode) pSlider.max=String(Math.max(+pSlider.max, shotP));
+      document.title = `STILL ${letter} P${shotP} λ${lamMax.toFixed(3)}${warn?' WARN':''}`;
+      publishMeta({p:shotP, lam:lamMax, warn, meshN:N});
+      finishStillBoot();
+    }, 30);
+  } else { pressure=shotP; finishStillBoot(); }
+} else {
+  publishMeta({p:0, lam:1, warn:false});
+  finishStillBoot();
+}
+
+function frame(){
+  if(!autoBusy && !(stillMode && tipSettledFor===pressure && pressure>0) && window.__READY__){
+    if(targetP<=0){ if(pressure!==0){resetMesh(); pressure=0;} }
+    else {
+      const maxP=+pSlider.max; const atTip=targetP>=maxP-0.5;
+      if(Math.abs(pressure-targetP)>1){ pressure+=Math.sign(targetP-pressure)*Math.min(220,Math.abs(targetP-pressure)); tipSettledFor=-1; minimize(8); }
+      else {
+        pressure=targetP;
+        if(atTip && tipSettledFor!==pressure){
+          // Phase 0.3: warm tip settle — avoid cold lambdaFromRest on interactive ramps
+          if(WARM_START) warmClimbToP(pressure, 28);
+          else lambdaFromRest(pressure,240);
+          tipSettledFor=pressure;
+        }
+        else if(!atTip){
+          tipSettledFor=-1; minimize(12);
+          if(lamMax>2.7){
+            if(WARM_START) warmSettleToP(pressure, 80);
+            else lambdaFromRest(pressure,180);
+          }
+        }
+        else energy();
+      }
+    }
+  } else if(stillMode){ energy(); }
+  uploadMesh();
+  const eyeDist=0.42;
+  const eye=[Math.sin(rotY)*Math.cos(rotX)*eyeDist, Math.sin(rotX)*eyeDist, Math.cos(rotY)*Math.cos(rotX)*eyeDist];
+  const vp=matMul(perspective(0.85, canvas.width/Math.max(1,canvas.height), 0.015, 5), lookAt(eye,[0,0,0],[0,1,0]));
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(uVP,false,vp); gl.uniform3f(uEye,eye[0],eye[1],eye[2]);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0.027,0.031,0.047,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPos); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufSeam); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx);
+  gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_INT, 0);
+
+  if(wireToggle && wireToggle.checked){
+    gl.useProgram(wireProg);
+    gl.uniformMatrix4fv(uWireVP,false,vp);
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufPos);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    gl.disableVertexAttribArray(1); gl.disableVertexAttribArray(2);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufEdge);
+    gl.drawElements(gl.LINES, edgeIdx.length, gl.UNSIGNED_INT, 0);
+    if(meshDiagOn && freeEdgeIdx && freeEdgeIdx.length){
+      gl.useProgram(freeProg);
+      gl.uniformMatrix4fv(uFreeVP,false,vp);
+      gl.lineWidth(2);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufFree);
+      gl.drawElements(gl.LINES, freeEdgeIdx.length, gl.UNSIGNED_INT, 0);
+      gl.useProgram(nodeProg);
+      gl.uniformMatrix4fv(uNodeVP,false,vp);
+      gl.drawArrays(gl.POINTS, 0, N);
+    }
+    gl.useProgram(prog);
+    gl.enable(gl.BLEND); gl.depthMask(false);
+    gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2);
+  }
+
+  lamEl.textContent=Number.isFinite(lamMax)?lamMax.toFixed(3):"NaN";
+  if(warn){ stEl.textContent="WARN — λ_max (membrane principal) ≥ 2 · past NH grill fit"; stEl.className="warn"; }
+  else { stEl.textContent="in range"; stEl.className="ok"; }
+  requestAnimationFrame(frame);
+}
+energy(); requestAnimationFrame(frame);
+</script>
 </body>
 </html>
