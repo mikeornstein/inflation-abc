@@ -4,19 +4,18 @@ DynaPuff Bold → 5 cm hollow film shell → neo-Hookean inflate (letters **A ·
 
 **Ship path (Quality clear for A):** Design-PASS Gmsh bake + **true quad membrane default**.
 
-## Repo / Pages
-- **Visibility:** Mike approved making this repo **public**. (MCP `user-Github` has no visibility/update-repo tool — flip Public in GitHub Settings → General if not already.)
-- **GitHub Pages:** pending until the repo is public (then enable Pages from `main` / root).
-- Intended URL: https://mikeornstein.github.io/inflation-abc/
+## Live
+**GitHub Pages:** https://mikeornstein.github.io/inflation-abc/
 
-## Default boot
-Default loads **`meshes/A.json`** (N=1554 orphan28) with **quadmem ON**. Opt out: `?quadmem=0`.
+(Enable Pages from `main` / root if the link 404s.)
 
 ## Local
 ```bash
 python3 -m http.server 8080
 # http://127.0.0.1:8080/
 ```
+
+Default loads `meshes/A.json` (N=1554 orphan28) with quadmem ON. Opt out: `?quadmem=0`.
 
 | Query | Meaning |
 |-------|---------|
