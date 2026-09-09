@@ -42,10 +42,12 @@
   button.secondary { background: transparent; color: #9aa3b5; border-color: #2a3140; font-size: 11px; padding: 4px 8px; margin-top: 4px; }
   details.lab { margin-top: 14px; }
   details.lab > summary { cursor: pointer; color: #9aa3b5; margin-bottom: 8px; }
-  .letter-row { display:flex; gap:6px; margin: 6px 0 4px; }
-  .letter-row button { flex:1; font-weight:700; font-size:15px; letter-spacing:0.04em; }
+  .letter-row { display:flex; gap:6px; margin: 6px 0 4px; flex-wrap:wrap; }
+  .letter-row button { flex:1; font-weight:700; font-size:15px; letter-spacing:0.04em; min-width:2.4em; }
   .letter-row button.active { background:#2a4060; border-color:#6a9de8; color:#cfe2ff; }
   a.dim { color:#8eb4ef; }
+  #geomErr { color:#ffb454; margin:8px 0 0; display:none; }
+  #bakeFile { width:100%; margin-top:6px; color:#9aa3b5; }
   #meshDiagBanner {
     position: absolute; left: 12px; top: 12px; z-index: 5;
     background: rgba(8,10,16,0.82); border: 1px solid #5a3040;
@@ -107,7 +109,9 @@
         <button type="button" data-letter="A" class="active">A</button>
         <button type="button" data-letter="B">B</button>
         <button type="button" data-letter="C">C</button>
+        <button type="button" data-letter="torus">torus</button>
       </div>
+      <p id="geomErr"></p>
       <label>Pressure <span class="val" id="pVal">0</span> Pa</label>
       <input type="range" id="pSlider" min="0" max="80000" step="50" value="0" />
       <label id="wireToggleLabel" style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" autocomplete="off" /> Thin wireframe overlay</label>
@@ -117,6 +121,9 @@
       <p>λ<sub>max</sub>: <span id="lam" class="val">1.00</span></p>
       <p>Status: <span id="st" class="ok">in range</span></p>
       <p>Solve: <span id="solve" class="warn">CPU settle · WebGL film</span></p>
+      <label>Mesh density <span class="val" id="densityVal">3 · 4 quads across tube</span></label>
+      <input type="range" id="densitySlider" min="1" max="5" step="1" value="3" />
+      <p class="meta" id="densityHint" style="margin-top:4px">Torus loads a prebaked shell (~2–4 quads across the tube at default). A/B/C keep Design-PASS bakes.</p>
       <details class="lab">
         <summary>Details</summary>
         <p>Last step: <span id="stepMs" class="val">—</span></p>
@@ -132,8 +139,20 @@
           Same NH + wrinkle clamp + λ≥2 warn · warn stills stop at <strong>first λ≥2</strong><br/>
           Bar: <a class="dim" href="design/BLOCK-LETTER-BAR.md">design/BLOCK-LETTER-BAR.md</a><br/>
           Public · quadmem default · bake A<br/>
-          Scrub: WASM SIMD lerp of a load-time Chiron pressure ladder (default ΔP=2000 Pa) · <a class="dim" href="docs/PRESSURE-LADDER.md">docs/PRESSURE-LADDER.md</a> · <code>?live=1</code> forces per-step CPU settle
+          Scrub: WASM SIMD lerp of a load-time Chiron pressure ladder (default ΔP=2000 Pa) · <a class="dim" href="docs/PRESSURE-LADDER.md">docs/PRESSURE-LADDER.md</a> · <code>?live=1</code> forces per-step CPU settle<br/>
+          Extra: owned torus bake (not SVG/presets) · density swaps prebaked JSON · <a class="dim" href="docs/ARBITRARY-GEOMETRY.md">docs/ARBITRARY-GEOMETRY.md</a>
         </p>
+        <p class="meta">Upload bake JSON (same schema as letter/torus bakes). STL/STEP remesh is the CLI path (<code>tools/bake_quad.py --step|--stl</code>; QuadriFlow if present), not in-browser.</p>
+        <input type="file" id="bakeFile" accept="application/json,.json" />
+        <details>
+          <summary>Geometry limits</summary>
+          <ul>
+            <li>Single-body closed shell. Multi-body STEP/STL rejected.</li>
+            <li>Dirty STL (holes, non-manifold) fails hygiene (<code>free≠0</code>).</li>
+            <li>Open shells fail. Caps: ≤8000 verts, ≤12000 quads.</li>
+            <li>Tris only when needed; torus demo is all-quad.</li>
+          </ul>
+        </details>
       </details>
     </aside>
   </div>
@@ -1309,10 +1328,12 @@ function applyBakeMesh(L, data){
   let V=0; for(const [i,j,k] of tris){const x0=[pos0[3*i],pos0[3*i+1],pos0[3*i+2]],x1=[pos0[3*j],pos0[3*j+1],pos0[3*j+2]],x2=[pos0[3*k],pos0[3*k+1],pos0[3*k+2]]; V+=dot(x0,cross(sub(x1,x0),sub(x2,x0)));}
   V/=6;
   const meta=data.meta||{};
-  meshMeta={letter:L, font:FONT_USED, depth_m:DEPTH, shell:"gmsh-alg9-quad-shell", N, tris:tris.length, quads:quads.length, V_mL:V*1e6, bake:meta};
+  const plan=meta.plan||"Gmsh alg9 packing+Blossom";
+  meshMeta={letter:L, font:FONT_USED, depth_m:DEPTH, shell:meta.remesh||"gmsh-alg9-quad-shell", N, tris:tris.length, quads:quads.length, V_mL:V*1e6, bake:meta};
   document.getElementById("meshLabel").textContent=
-    `Gmsh alg9 packing+Blossom · ${L} · ${N}v / ${quads.length}q / ${tris.length}t · V₀ ${(V*1e6).toFixed(1)} mL · window.quads ON`+(USE_QUAD_MEMBRANE?` · quadmem restQ=${restQ.length}`:"");
+    `${plan} · ${L} · ${N}v / ${quads.length}q / ${tris.length}t · V₀ ${(V*1e6).toFixed(1)} mL · window.quads ON`+(USE_QUAD_MEMBRANE?` · quadmem restQ=${restQ.length}`:"");
   bufIdxReady=false;
+  window.__GEOM__={id:L, N, quads:quads.length, restQ:restQ.length, bake:true, density:meta.density||null};
   console.log("[mesh bake]", meshMeta);
 }
 
@@ -1863,29 +1884,98 @@ function switchLetter(L){
   if(wasmLadder) wasmLadder.nFilled=0;
   tipSettledFor=-1; pressure=0; targetP=0; warn=false; lamMax=1;
   pSlider.value="0"; pVal.textContent="0";
-  // Prefer Design-PASS bake JSON for letter switches (ship path)
+  setGeomErr("");
   try{
-    const letterWant=L.toUpperCase();
-    const xhr=new XMLHttpRequest();
-    xhr.open("GET", "meshes/"+letterWant+".json", false);
-    xhr.send(null);
-    if(xhr.status===200){ applyBakeMesh(letterWant, JSON.parse(xhr.responseText)); }
-    else { console.warn("[bake] missing meshes/"+letterWant+".json — grid fallback"); buildLetterMesh(L); }
-  }catch(e){ console.warn(e); buildLetterMesh(L); }
+    if(L==="torus"){
+      const lv=+(document.getElementById("densitySlider")||{}).value||3;
+      loadBakeUrl("torus", TorusBake.fileFor(lv));
+    } else {
+      const letterWant=L.toUpperCase();
+      const xhr=new XMLHttpRequest();
+      xhr.open("GET", "meshes/"+letterWant+".json", false);
+      xhr.send(null);
+      if(xhr.status===200){ applyBakeMesh(letterWant, JSON.parse(xhr.responseText)); }
+      else { console.warn("[bake] missing meshes/"+letterWant+".json — grid fallback"); buildLetterMesh(L); }
+    }
+  }catch(e){ console.warn(e); setGeomErr(String(e.message||e)); if(L!=="torus") try{ buildLetterMesh(L); }catch(_e){} }
   resetMesh(); energy(); syncGpuBuffers();
   document.querySelectorAll("#letterRow button").forEach(b=>b.classList.toggle("active", b.getAttribute("data-letter")===L));
   startLadderBake();
+}
+
+class TorusBake {
+  static ACROSS = {1:2, 2:3, 3:4, 4:6, 5:8};
+  static fileFor(level){
+    const n=Math.max(1, Math.min(5, level|0));
+    return n===3 ? "meshes/torus-demo.json" : "meshes/torus-demo.d"+n+".json";
+  }
+  static label(level){
+    const n=Math.max(1, Math.min(5, level|0));
+    return n+" · "+TorusBake.ACROSS[n]+" quads across tube";
+  }
+}
+window.TorusBake=TorusBake;
+function loadBakeUrl(id, url){
+  const xhr=new XMLHttpRequest();
+  xhr.open("GET", url, false);
+  xhr.send(null);
+  if(xhr.status!==200) throw new Error("missing "+url);
+  applyBakeMesh(id, JSON.parse(xhr.responseText));
+}
+function setGeomErr(msg){
+  const el=document.getElementById("geomErr");
+  if(!el) return;
+  if(msg){ el.style.display="block"; el.textContent=msg; }
+  else { el.style.display="none"; el.textContent=""; }
+}
+function updateDensityLabel(){
+  const sl=document.getElementById("densitySlider");
+  const dv=document.getElementById("densityVal");
+  if(dv&&sl) dv.textContent=TorusBake.label(+sl.value||3);
+}
+function remeshTorusIfNeeded(){
+  updateDensityLabel();
+  if(letter==="torus") switchLetter("torus");
 }
 
 document.getElementById("letterRow").addEventListener("click", e=>{
   const b=e.target.closest("button[data-letter]"); if(!b) return;
   switchLetter(b.getAttribute("data-letter"));
 });
+{
+  const dens=document.getElementById("densitySlider");
+  if(dens){
+    dens.addEventListener("input", updateDensityLabel);
+    dens.addEventListener("change", remeshTorusIfNeeded);
+  }
+  const bakeFile=document.getElementById("bakeFile");
+  if(bakeFile) bakeFile.addEventListener("change", e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const data=JSON.parse(String(reader.result));
+        if(!data.pos0||!data.quads) throw new Error("bake JSON needs pos0 + quads");
+        if(data.pos0.length/3>8000) throw new Error("N exceeds 8000 vert cap");
+        ladderGen++; if(wasmLadder) wasmLadder.nFilled=0;
+        applyBakeMesh(data.meta&&data.meta.id||"upload", data);
+        resetMesh(); energy(); syncGpuBuffers();
+        document.querySelectorAll("#letterRow button").forEach(b=>b.classList.remove("active"));
+        startLadderBake();
+      }catch(err){ setGeomErr(String(err.message||err)); }
+    };
+    reader.readAsText(f);
+  });
+}
 
-const qLetter=(new URLSearchParams(location.search).get("letter")||"A").toUpperCase();
+const qLetter=(new URLSearchParams(location.search).get("letter")||"").toUpperCase();
 const qBake=(new URLSearchParams(location.search).get("bake")||"").toUpperCase();
+const qShape=(new URLSearchParams(location.search).get("shape")||"").toLowerCase();
 (function bootMesh(){
-  // Ship default: Design-PASS Gmsh bake for letter (A remesh N=1554). ?bake= still wins; missing file → grid fallback.
+  if(qShape==="torus" || qLetter==="TORUS" || qBake==="TORUS"){
+    try{ loadBakeUrl("torus", TorusBake.fileFor(+(document.getElementById("densitySlider")||{}).value||3)); return; }
+    catch(e){ console.warn(e); setGeomErr(String(e.message||e)); }
+  }
   const L=["A","B","C"].includes(qBake)?qBake:(["A","B","C"].includes(qLetter)?qLetter:"A");
   try{
     const xhr=new XMLHttpRequest();

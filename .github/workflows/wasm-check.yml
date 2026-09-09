@@ -13,3 +13,7 @@ jobs:
           node-version: "20"
       - name: SIMD SoA lerp
         run: node test/ladder-wasm.mjs
+      - name: Torus bake gates
+        run: node test/torus-bake.mjs
+      - name: Bake quality self-test
+        run: python3 tools/bake_quad.py --self-test
