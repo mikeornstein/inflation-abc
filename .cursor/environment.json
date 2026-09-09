@@ -1,0 +1,16 @@
+{
+  "name": "Inflation ABC",
+  "install": "python3 --version",
+  "terminals": [
+    {
+      "name": "static-server",
+      "command": "python3 -m http.server 8080"
+    }
+  ],
+  "ports": [
+    {
+      "name": "app",
+      "port": 8080
+    }
+  ]
+}
