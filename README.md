@@ -1,6 +1,6 @@
 # Inflation ABC
 
-DynaPuff Bold → 5 cm hollow film shell → neo-Hookean inflate (letters **A · B · C**).
+DynaPuff Bold → 5 cm hollow film shell → neo-Hookean inflate (letters **A · B · C**). Extra: owned torus bake (ORN-52).
 
 **Ship path (Quality clear for A):** Design-PASS Gmsh bake + **true quad membrane default**.
 
@@ -20,13 +20,14 @@ Default loads `meshes/A.json` (N=1554 orphan28) with quadmem ON. Opt out: `?quad
 | Query | Meaning |
 |-------|---------|
 | `?letter=A\|B\|C` | Switch letter bake |
+| `?shape=torus` | Load owned torus bake (ORN-52) |
 | `?quadmem=0` | Tri-split fallback/debug |
 | `?wire=1` | Wire overlay |
 | `?still=1&beauty=1&ramptowarn=1` | Capture still path |
 | `?live=1` | Per-step CPU settle (skip WASM ladder) |
 | `?dP=2000` | Ladder spacing in Pa (default 2000) |
 
-Pressure scrub: load-time Chiron ladder + WASM SIMD lerp (`docs/PRESSURE-LADDER.md`).
+Pressure scrub: load-time Chiron ladder + WASM SIMD lerp (`docs/PRESSURE-LADDER.md`). Torus: `docs/ARBITRARY-GEOMETRY.md`.
 
 ## Locks
 - μ = grill eng. (not invented)
@@ -37,6 +38,7 @@ Pressure scrub: load-time Chiron ladder + WASM SIMD lerp (`docs/PRESSURE-LADDER.
 
 ## Docs
 - `docs/PRESSURE-LADDER.md`
+- `docs/ARBITRARY-GEOMETRY.md`
 - `docs/2026-09-07-quadmem-A-ship-clear.md`
 - `docs/DEFAULT-QUADMEM.md`
 - `meshes/A-LOCK.md`

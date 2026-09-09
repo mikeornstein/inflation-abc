@@ -13,3 +13,5 @@ jobs:
           node-version: "20"
       - name: SIMD SoA lerp
         run: node test/ladder-wasm.mjs
+      - name: Torus bake gates
+        run: node test/torus-bake.mjs

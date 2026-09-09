@@ -8,4 +8,5 @@
 - [x] Lean publish tree (no `.venv`, no archive-dense, no bak)
 - [x] Public Pages URL
 - [x] Silky pressure scrub (WASM SIMD lerp of load-time Chiron ladder, ORN-49)
+- [x] Owned torus bake + density (ORN-52; QuadriFlow-bar closed shell)
 - [ ] CloudAgent on repo
