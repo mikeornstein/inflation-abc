@@ -15,6 +15,8 @@
   aside { border-left: 1px solid #2a3140; padding: 12px; font-size: 12px; overflow: auto; }
   label { display: block; margin: 10px 0 4px; color: #9aa3b5; }
   input[type=range] { width: 100%; }
+  #wireToggleLabel { cursor: pointer; user-select: none; }
+  #wireToggle { width: auto; flex: none; accent-color: #8eb4ef; }
   .val { font-variant-numeric: tabular-nums; color: #e8ecf4; }
   .warn { color: #ffb454; font-weight: 600; }
   .ok { color: #7dcea0; }
@@ -60,7 +62,7 @@
       <p>Solve: <span id="solve" class="warn">CPU settle · WebGL film</span></p>
       <p>Last step: <span id="stepMs" class="val">—</span></p>
       <p>Ladder: <span id="ladderMeta" class="val">—</span></p>
-      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" /> Thin wireframe overlay</label>
+      <label id="wireToggleLabel" style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="wireToggle" autocomplete="off" /> Thin wireframe overlay</label>
       <button id="btnResetCam" type="button">Reset camera</button>
       <p class="meta" style="margin-top:6px">Canvas: drag orbit · shift/right-drag pan · wheel/pinch zoom</p>
       <p class="meta">
@@ -261,10 +263,68 @@ let gasNRT=null; // null=dead p; number ⇒ isothermal gas p=gasNRT/V (stable hi
 let lastSolveMs=0, lastSolveIters=0;
 let settleLog=true; // false during ladder bake (avoid console flood)
 let wasmLadder=null, ladderGen=0, ladderFailed=false, bakePos=null;
-let idx=null, edgeIdx=null, freeEdgeIdx=null, bufIdxReady=false;
+let idx=null, edgeIdx=null, freeEdgeIdx=null, bufIdxReady=false, drawIdx=null;
 let meshMeta={};
 
 const key=p=>p.map(v=>(Math.round(v*1e9)/1e9).toFixed(9)).join(",");
+
+/** Overlay edges from quad perimeters (+ orphan cap tris). Never includes split diagonals. */
+function addUndirectedEdge(set, a, b){
+  a=a|0; b=b|0;
+  if(a===b) return;
+  if(a>b){ const t=a; a=b; b=t; }
+  set.add(a+"_"+b);
+}
+function buildOverlayEdgeIdx(){
+  const set=new Set();
+  if(quads && quads.length){
+    for(const q of quads){
+      const n=q.length;
+      for(let i=0;i<n;i++) addUndirectedEdge(set, q[i], q[(i+1)%n]);
+    }
+    const extra=(orphanTris && orphanTris.length) ? orphanTris : (faceTris||[]);
+    for(const tr of extra){
+      addUndirectedEdge(set, tr[0], tr[1]);
+      addUndirectedEdge(set, tr[1], tr[2]);
+      addUndirectedEdge(set, tr[2], tr[0]);
+    }
+  } else {
+    for(const [i,j,k] of tris){
+      addUndirectedEdge(set, i, j); addUndirectedEdge(set, j, k); addUndirectedEdge(set, k, i);
+    }
+  }
+  edgeIdx=new Uint32Array(set.size*2);
+  let e=0; for(const k of set){ const [a,b]=k.split("_").map(Number); edgeIdx[e++]=a; edgeIdx[e++]=b; }
+  window.__OVERLAY__={nEdges:set.size, nQuads:(quads&&quads.length)|0, nOrphans:(orphanTris&&orphanTris.length)|0, fromQuads:!!(quads&&quads.length)};
+}
+function buildContactAdjFromTris(){
+  contactAdj=Array.from({length:N},()=>new Set());
+  for(const [i,j,k] of tris){
+    contactAdj[i].add(j); contactAdj[j].add(i);
+    contactAdj[j].add(k); contactAdj[k].add(j);
+    contactAdj[k].add(i); contactAdj[i].add(k);
+  }
+}
+function buildFreeEdgesFromTris(){
+  const ec=new Map();
+  for(const [i,j,k] of tris){
+    for(const [a,b] of [[i,j],[j,k],[k,i]]){
+      const key=a<b?a+"_"+b:b+"_"+a;
+      ec.set(key,(ec.get(key)||0)+1);
+    }
+  }
+  const free=[];
+  for(const [k,c] of ec){ if(c===1){ const [a,b]=k.split("_").map(Number); free.push(a,b); } }
+  freeEdgeIdx=new Uint32Array(free);
+}
+/** Rest-pose sheet: 1=front cap, 2=back cap, 3=wall. Split GPU verts here so extrusion stays a crease. */
+function triSheet(i,j,k){
+  const zF=DEPTH/2, zB=-DEPTH/2, eps=1e-6;
+  const za=pos0[3*i+2], zb=pos0[3*j+2], zc=pos0[3*k+2];
+  if(Math.abs(za-zF)<eps && Math.abs(zb-zF)<eps && Math.abs(zc-zF)<eps) return 1;
+  if(Math.abs(za-zB)<eps && Math.abs(zb-zB)<eps && Math.abs(zc-zB)<eps) return 2;
+  return 3;
+}
 
 function buildLetterMesh(L){
   letter=L;
@@ -286,7 +346,7 @@ function buildLetterMesh(L){
   const xmin=-Lw/2, ymin=-LH/2, dx=Lw/nu, dy=LH/nv;
 
   const vertMap=new Map();
-  pos0=[]; pos=[]; tris=[];
+  pos0=[]; pos=[]; tris=[]; quads=[]; faceTris=null;
   function getVert(p){
     const k=key(p);
     if(vertMap.has(k)) return vertMap.get(k);
@@ -324,8 +384,8 @@ function buildLetterMesh(L){
 
   function addCapQuad(x0,y0,x1,y1,z, flip){
     const ia=getVert([x0,y0,z]), ib=getVert([x1,y0,z]), ic=getVert([x1,y1,z]), id=getVert([x0,y1,z]);
-    if(flip) tris.push([ia,ic,ib],[ia,id,ic]);
-    else tris.push([ia,ib,ic],[ia,ic,id]);
+    if(flip){ tris.push([ia,ic,ib],[ia,id,ic]); quads.push([ia,id,ic,ib]); }
+    else { tris.push([ia,ib,ic],[ia,ic,id]); quads.push([ia,ib,ic,id]); }
   }
   let nRefined=0, nCoarse=0;
   for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
@@ -434,7 +494,7 @@ function buildLetterMesh(L){
       layers.push(row);
     }
     layers.push(backLoop);
-    let quads=0;
+    let nQuads=0;
     for(let k=0;k<NZ;k++){
       for(let i=0;i<n;i++){
         const j=(i+1)%n;
@@ -442,10 +502,11 @@ function buildLetterMesh(L){
         if(a===b||b===c||c===d||d===a||a===c||b===d) continue;
         // outward-ish: front CCW from +z → wall a,d,c / a,c,b keeps rim shared once
         tris.push([a,d,c],[a,c,b]);
-        quads++;
+        quads.push([a,d,c,b]);
+        nQuads++;
       }
     }
-    return {ok:true, n, quads};
+    return {ok:true, n, quads:nQuads};
   }
 
   const backByXY=new Map();
@@ -530,25 +591,8 @@ function buildLetterMesh(L){
 
   idx=new Uint32Array(tris.length*3);
   for(let t=0;t<tris.length;t++){idx[t*3]=tris[t][0];idx[t*3+1]=tris[t][1];idx[t*3+2]=tris[t][2];}
-  const edgeSet=new Set();
-  for(const [i,j,k] of tris){
-    for(const [a,b] of [[i,j],[j,k],[k,i]]) edgeSet.add(Math.min(a,b)+"_"+Math.max(a,b));
-  }
-  edgeIdx=new Uint32Array(edgeSet.size*2);
-  { let e=0; for(const k of edgeSet){ const [a,b]=k.split("_").map(Number); edgeIdx[e++]=a; edgeIdx[e++]=b; } }
-  // Free / boundary edges (incidence == 1 across all tris)
-  {
-    const ec=new Map();
-    for(const [i,j,k] of tris){
-      for(const [a,b] of [[i,j],[j,k],[k,i]]){
-        const key=Math.min(a,b)+"_"+Math.max(a,b);
-        ec.set(key,(ec.get(key)||0)+1);
-      }
-    }
-    const free=[];
-    for(const [k,c] of ec){ if(c===1){ const [a,b]=k.split("_").map(Number); free.push(a,b); } }
-    freeEdgeIdx=new Uint32Array(free);
-  }
+  buildOverlayEdgeIdx();
+  buildFreeEdgesFromTris();
 
   // Front/back contact pairs: same rest (x,y) on opposite caps z≈±DEPTH/2
   contactPairs=[];
@@ -563,18 +607,15 @@ function buildLetterMesh(L){
     for(const [k,i] of front){ if(back.has(k)) contactPairs.push([i, back.get(k)]); }
   }
   // Topological adjacency (1-ring) — skip for proximity repulsion
-  contactAdj=Array.from({length:N},()=>new Set());
-  for(let e=0;e<edgeIdx.length;e+=2){
-    const a=edgeIdx[e], b=edgeIdx[e+1];
-    contactAdj[a].add(b); contactAdj[b].add(a);
-  }
+  buildContactAdjFromTris();
   console.log("[contact] pairs", contactPairs.length, "KISS", CONTACT_KISS, "ENGAGE", CONTACT_ENGAGE);
   {
     const nFree = freeEdgeIdx ? (freeEdgeIdx.length/2)|0 : 0;
     const diagOn = new URLSearchParams(location.search).get("meshdiag")==="1";
-    quads=null; faceTris=null; window.quads=null; window.faceTris=null; BAKE_MODE=false;
+    BAKE_MODE=false;
+    window.quads=quads; window.faceTris=faceTris;
     restQ=[]; orphanTris=[]; orphanRest=[];
-    window.__MESH_DIAG__ = {letter:L, N, tris:tris.length, edges:(edgeIdx.length/2)|0, freeEdges:nFree, mesh:"grid+cap-boundary-salvage", gmshLoaded:false};
+    window.__MESH_DIAG__ = {letter:L, N, tris:tris.length, quads:(quads&&quads.length)|0, edges:(edgeIdx.length/2)|0, freeEdges:nFree, mesh:"grid+cap-boundary-salvage", gmshLoaded:false};
     const ban=document.getElementById("meshDiagBanner");
     if(ban && diagOn){
       ban.style.display="block";
@@ -1181,24 +1222,8 @@ function applyBakeMesh(L, data){
   force=new Float64Array(N*3); ensureMinimizeScratch(N*3);
   idx=new Uint32Array(tris.length*3);
   for(let t=0;t<tris.length;t++){idx[t*3]=tris[t][0];idx[t*3+1]=tris[t][1];idx[t*3+2]=tris[t][2];}
-  const edgeSet=new Set();
-  for(const [i,j,k] of tris){
-    for(const [a,b] of [[i,j],[j,k],[k,i]]) edgeSet.add(Math.min(a,b)+"_"+Math.max(a,b));
-  }
-  edgeIdx=new Uint32Array(edgeSet.size*2);
-  { let e=0; for(const k of edgeSet){ const [a,b]=k.split("_").map(Number); edgeIdx[e++]=a; edgeIdx[e++]=b; } }
-  {
-    const ec=new Map();
-    for(const [i,j,k] of tris){
-      for(const [a,b] of [[i,j],[j,k],[k,i]]){
-        const key=Math.min(a,b)+"_"+Math.max(a,b);
-        ec.set(key,(ec.get(key)||0)+1);
-      }
-    }
-    const free=[];
-    for(const [k,c] of ec){ if(c===1){ const [a,b]=k.split("_").map(Number); free.push(a,b); } }
-    freeEdgeIdx=new Uint32Array(free);
-  }
+  buildOverlayEdgeIdx();
+  buildFreeEdgesFromTris();
   contactPairs=[];
   {
     const front=new Map(), back=new Map();
@@ -1210,11 +1235,7 @@ function applyBakeMesh(L, data){
     }
     for(const [k,i] of front){ if(back.has(k)) contactPairs.push([i, back.get(k)]); }
   }
-  contactAdj=Array.from({length:N},()=>new Set());
-  for(let e=0;e<edgeIdx.length;e+=2){
-    const a=edgeIdx[e], b=edgeIdx[e+1];
-    contactAdj[a].add(b); contactAdj[b].add(a);
-  }
+  buildContactAdjFromTris();
   console.log("[contact] pairs", contactPairs.length, "KISS", CONTACT_KISS, "(bake)");
   {
     const nFree = freeEdgeIdx ? (freeEdgeIdx.length/2)|0 : 0;
@@ -1515,7 +1536,9 @@ uniform float uIOR; uniform vec3 uLight;
 out vec4 o;
 float fresnel(float c, float ior){ float r0=pow((1.0-ior)/(1.0+ior),2.0); float m=1.0-c; return r0+(1.0-r0)*m*m*m*m*m; }
 void main(){
-  vec3 n=normalize(vN); vec3 V=normalize(vEye-vW);
+  vec3 n=vN; float nlen=length(n);
+  n=nlen>1e-6 ? n/nlen : vec3(0.0, 0.0, 1.0);
+  vec3 V=normalize(vEye-vW);
   if(dot(n,V)<0.0) n=-n;
   vec3 L=normalize(uLight); vec3 H=normalize(L+V);
   float NdotV=max(dot(n,V),0.0), NdotL=max(dot(n,L),0.0), NdotH=max(dot(n,H),0.0);
@@ -1550,11 +1573,16 @@ gl.uniform1f(uIOR, IOR);
 gl.uniform3f(uLight, 0.45, 0.85, 0.35);
 
 const bufPos=gl.createBuffer(), bufNrm=gl.createBuffer(), bufSeam=gl.createBuffer(), bufIdx=gl.createBuffer(), bufEdge=gl.createBuffer(), bufFree=gl.createBuffer();
+const bufDrawPos=gl.createBuffer(), bufDrawNrm=gl.createBuffer(), bufDrawSeam=gl.createBuffer(), bufDrawIdx=gl.createBuffer();
 
 const wireVs=`#version 300 es
 layout(location=0) in vec3 aPos;
 uniform mat4 uVP;
-void main(){ gl_Position=uVP*vec4(aPos,1.0); }`;
+void main(){
+  vec4 p=uVP*vec4(aPos,1.0);
+  p.z -= 0.0018 * p.w;
+  gl_Position=p;
+}`;
 const wireFs=`#version 300 es
 precision highp float;
 out vec4 o;
@@ -1588,7 +1616,17 @@ const uFreeVP=gl.getUniformLocation(freeProg,"uVP");
 const uNodeVP=gl.getUniformLocation(nodeProg,"uVP");
 const wireToggle=document.getElementById("wireToggle");
 const meshDiagOn=new URLSearchParams(location.search).get("meshdiag")==="1";
+let showWire=false;
+function syncWireFromUI(){
+  showWire=!!(wireToggle && wireToggle.checked);
+  if(wireToggle) wireToggle.setAttribute("aria-checked", showWire?"true":"false");
+}
 if((new URLSearchParams(location.search).get("wire")==="1" || meshDiagOn) && wireToggle) wireToggle.checked=true;
+if(wireToggle){
+  wireToggle.addEventListener("input", syncWireFromUI);
+  wireToggle.addEventListener("change", syncWireFromUI);
+}
+syncWireFromUI();
 if(meshDiagOn){
   const ban=document.getElementById("meshDiagBanner");
   if(ban){
@@ -1606,30 +1644,67 @@ function syncGpuBuffers(){
 }
 function uploadMesh(){
   if(!bufIdxReady) syncGpuBuffers();
-  const nrms=new Float32Array(N*3);
-  const thick=new Float32Array(N); // h/H0
+  const nSlot=N*4;
+  const nrms=new Float32Array(nSlot*3);
+  const nrmW=new Float32Array(nSlot);
+  const thick=new Float32Array(N);
   const thickW=new Float32Array(N);
   for(let t=0;t<tris.length;t++){
     const [i,j,k]=tris[t];
     const e1=sub([pos[3*j],pos[3*j+1],pos[3*j+2]],[pos[3*i],pos[3*i+1],pos[3*i+2]]);
     const e2=sub([pos[3*k],pos[3*k+1],pos[3*k+2]],[pos[3*i],pos[3*i+1],pos[3*i+2]]);
     const nn=cross(e1,e2);
-    for(const id of [i,j,k]){nrms[3*id]+=nn[0];nrms[3*id+1]+=nn[1];nrms[3*id+2]+=nn[2];}
-    // Incompressible membrane: h = H0/(λ1·λ2) — reuse triW stretch
+    const sh=triSheet(i,j,k);
+    for(const id of [i,j,k]){
+      const s=id*4+sh;
+      nrms[3*s]+=nn[0]; nrms[3*s+1]+=nn[1]; nrms[3*s+2]+=nn[2];
+      nrmW[s]+=1;
+    }
     const s=triW(t);
     const lamProd=Math.max(1e-6, s.lam1*s.lam2);
-    const hRel=1/lamProd; // == h/H0
+    const hRel=1/lamProd;
     const w=Math.max(1e-12, s.A);
     for(const id of [i,j,k]){ thick[id]+=hRel*w; thickW[id]+=w; }
   }
   for(let i=0;i<N;i++){
-    const v=[nrms[3*i],nrms[3*i+1],nrms[3*i+2]]; const l=len(v)||1;
-    nrms[3*i]/=l;nrms[3*i+1]/=l;nrms[3*i+2]/=l;
     seamW[i]= thickW[i]>0 ? thick[i]/thickW[i] : 1;
   }
+  const used=[];
+  const map=new Int32Array(nSlot).fill(-1);
+  for(let i=0;i<N;i++){
+    for(let sh=1;sh<=3;sh++){
+      const s=i*4+sh;
+      if(nrmW[s]<=0) continue;
+      map[s]=used.length;
+      used.push(s);
+    }
+  }
+  const nG=used.length;
+  const gPos=new Float32Array(nG*3);
+  const gNrm=new Float32Array(nG*3);
+  const gTh=new Float32Array(nG);
+  for(let g=0;g<nG;g++){
+    const s=used[g];
+    const id=(s/4)|0;
+    gPos[3*g]=pos[3*id]; gPos[3*g+1]=pos[3*id+1]; gPos[3*g+2]=pos[3*id+2];
+    let nx=nrms[3*s], ny=nrms[3*s+1], nz=nrms[3*s+2];
+    const l=Math.hypot(nx,ny,nz)||1;
+    gNrm[3*g]=nx/l; gNrm[3*g+1]=ny/l; gNrm[3*g+2]=nz/l;
+    gTh[g]=seamW[id];
+  }
+  const gIdx=new Uint32Array(tris.length*3);
+  for(let t=0;t<tris.length;t++){
+    const [i,j,k]=tris[t];
+    const sh=triSheet(i,j,k);
+    const ia=map[i*4+sh], ib=map[j*4+sh], ic=map[k*4+sh];
+    gIdx[t*3]=ia<0?0:ia; gIdx[t*3+1]=ib<0?0:ib; gIdx[t*3+2]=ic<0?0:ic;
+  }
+  drawIdx=gIdx;
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawPos); gl.bufferData(gl.ARRAY_BUFFER, gPos, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawNrm); gl.bufferData(gl.ARRAY_BUFFER, gNrm, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawSeam); gl.bufferData(gl.ARRAY_BUFFER, gTh, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDrawIdx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, gIdx, gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.DYNAMIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm); gl.bufferData(gl.ARRAY_BUFFER, nrms, gl.DYNAMIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, bufSeam); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(seamW), gl.DYNAMIC_DRAW);
 }
 
 // Viewport camera — extend the existing spherical lookAt (no second control stack).
@@ -2187,19 +2262,27 @@ function frame(){
   const vp=matMul(perspective(0.85, canvas.width/Math.max(1,canvas.height), 0.008, 8), lookAt(eye,camTarget,[0,1,0]));
   gl.useProgram(prog);
   gl.uniformMatrix4fv(uVP,false,vp); gl.uniform3f(uEye,eye[0],eye[1],eye[2]);
-  gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.enable(gl.BLEND);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+  gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.clearColor(0.027,0.031,0.047,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  gl.bindBuffer(gl.ARRAY_BUFFER, bufPos); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, bufNrm); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, bufSeam); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx);
-  gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_INT, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawPos); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawNrm); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDrawSeam); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDrawIdx);
+  const nDraw=drawIdx ? drawIdx.length : 0;
+  gl.enable(gl.CULL_FACE);
+  gl.frontFace(gl.CCW);
+  gl.cullFace(gl.FRONT);
+  gl.drawElements(gl.TRIANGLES, nDraw, gl.UNSIGNED_INT, 0);
+  gl.cullFace(gl.BACK);
+  gl.drawElements(gl.TRIANGLES, nDraw, gl.UNSIGNED_INT, 0);
+  gl.disable(gl.CULL_FACE);
 
-  if(wireToggle && wireToggle.checked){
+  if(showWire && edgeIdx && edgeIdx.length){
     gl.useProgram(wireProg);
     gl.uniformMatrix4fv(uWireVP,false,vp);
-    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.bindBuffer(gl.ARRAY_BUFFER, bufPos);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
     gl.disableVertexAttribArray(1); gl.disableVertexAttribArray(2);
@@ -2215,8 +2298,9 @@ function frame(){
       gl.uniformMatrix4fv(uNodeVP,false,vp);
       gl.drawArrays(gl.POINTS, 0, N);
     }
+    gl.depthFunc(gl.LESS);
     gl.useProgram(prog);
-    gl.enable(gl.BLEND); gl.depthMask(false);
+    gl.enable(gl.BLEND); gl.depthMask(true);
     gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2);
   }
 
