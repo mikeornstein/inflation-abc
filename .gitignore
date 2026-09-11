@@ -1,4 +1,5 @@
 radioss/opt/
+radioss/env.sh
 radioss/A-inflate/run/
 __pycache__/
 *.pyc
