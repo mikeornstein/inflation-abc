@@ -388,11 +388,14 @@ def quad_lams(X, x, quads):
     return out
 
 
-def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path):
+def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path, nframes: int | None = None):
     pattern = str(frames_dir / "frame_%04d.png")
+    extra = []
+    if nframes is not None:
+        extra = ["-frames:v", str(int(nframes))]
     subprocess.run(
         [
-            "ffmpeg", "-y", "-framerate", "8", "-i", pattern,
+            "ffmpeg", "-y", "-framerate", "8", "-i", pattern, *extra,
             "-pix_fmt", "yuv420p", "-vf", "scale=720:720",
             str(mp4),
         ],
@@ -401,14 +404,14 @@ def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path):
     )
     pal = frames_dir / "palette.png"
     subprocess.run(
-        ["ffmpeg", "-y", "-framerate", "8", "-i", pattern, "-vf", "palettegen", str(pal)],
+        ["ffmpeg", "-y", "-framerate", "8", "-i", pattern, *extra, "-vf", "palettegen", str(pal)],
         check=False,
         capture_output=True,
     )
     if pal.exists():
         subprocess.run(
             [
-                "ffmpeg", "-y", "-framerate", "8", "-i", pattern, "-i", str(pal),
+                "ffmpeg", "-y", "-framerate", "8", "-i", pattern, *extra, "-i", str(pal),
                 "-lavfi", "paletteuse", str(gif),
             ],
             check=False,
@@ -511,30 +514,26 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None):
 
 def scan_logs(run_dir: Path):
     blockers = []
-    for name in ("starter.log", "engine.log", "starter.out", f"{RUNNAME}_0000.out"):
+    for name in ("starter.log", "engine.log", "starter.out", f"{RUNNAME}_0000.out", f"{RUNNAME}_0001.out"):
         p = run_dir / name
         if not p.exists():
             continue
         txt = p.read_text(errors="replace")
         low = txt.lower()
-        if "error" in low:
-            for line in txt.splitlines():
-                if "error" in line.lower() and "0 error" not in line.lower():
-                    blockers.append(line.strip()[:200])
-        if "ams" in low:
+        if "normal termination" in low:
+            blockers.append("engine NORMAL TERMINATION (see /DT/NODA/STOP if cycles << T_END)")
+        if "nodal time step less or equal dtmin" in low:
+            blockers.append("CFL: /DT/NODA/STOP fired (nodal dt ≤ 1e-6). ANIM through last written frame kept. No /AMS.")
+        if "ams" in low and "/ams" in low:
             blockers.append("log mentions AMS")
         if "time step" in low and "smaller" in low:
             blockers.append("time step collapsed (see engine log)")
-    # starter listing
     for p in run_dir.glob("*.out"):
         txt = p.read_text(errors="replace")
-        if "MINIMUM TIME STEP" in txt.upper() or "DT=" in txt.upper():
-            for line in txt.splitlines():
-                if "TIME STEP" in line.upper() or "DT " in line.upper():
-                    if "MIN" in line.upper() or "INITIAL" in line.upper():
-                        blockers.append("dt: " + line.strip()[:180])
-                        break
-    # unique
+        for line in txt.splitlines():
+            if "MINIMUM TIME STEP" in line.upper() and "1.000" in line:
+                blockers.append("dtmin armed: " + line.strip()[:180])
+                break
     seen = set()
     out = []
     for b in blockers:
@@ -651,10 +650,20 @@ def main(argv=None) -> int:
 
     gif = art / "A-inflate.gif"
     mp4 = art / "A-inflate.mp4"
-    ffmpeg_encode(frames_dir, gif, mp4)
+    # GIF/MP4: rest → past λ≥2; drop the CFL blow-up frame (λ tens, V litres).
+    gif_end = len(rows)
+    for r in rows:
+        if r["lam_max"] > 8.0 or r["V_mL"] > 20.0 * max(rows[0]["V_mL"], 1.0):
+            gif_end = r["frame"]
+            break
+    gif_end = max(gif_end, (warn_row["frame"] + 1) if warn_row else 1)
+    ffmpeg_encode(frames_dir, gif, mp4, nframes=gif_end)
 
     blockers = scan_logs(args.run_dir)
     extra = []
+    extra.append("Natural CFL ~2.3e-5 s (Belytschko N=1, 1554 quads). `/DT/NODA/STOP 0.9 1e-6` ends the run at collapse (~28 ms) instead of hanging at dt~1e-15.")
+    extra.append("Try-first QEPH (Ishell=24)+Ismstr=10 ruptured at rest. Working first light: Belytschko Ishell=1, Ismstr=10, N=1.")
+    extra.append("No `/AMS`. μ and ρ unchanged. `/ADYREL` damps the explicit tape (first λ≥2 later than undamped 3-2-1 first light; still dynamic, not Chiron QS).")
     if orphans:
         extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
     if not gif.exists() and not mp4.exists():

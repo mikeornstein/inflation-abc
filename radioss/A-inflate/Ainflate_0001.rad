@@ -15,7 +15,9 @@
 /PRINT/-200
 /DT
 0.9 0.0
-/DT/NODA/CST
+# Nodal STOP at 1e-6: terminate on CFL collapse (do not hang at dt~1e-15).
+# First light /DT/NODA/CST added mass but still collapsed; STOP keeps ANIM through warn.
+/DT/NODA/STOP
 0.9 1.0e-6
 # Free-free / inertial relief analogue (no /BCS pins).
 # /ADYREL = adaptive dynamic relaxation (OpenRadioss engine).
