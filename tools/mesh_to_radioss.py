@@ -228,7 +228,8 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w(f"/PROP/SHELL/{PROP_ID}\n")
     w("film membrane N=1 Ismstr=10 QEPH Ithick=1\n")
     w("#    Ishell    Ismstr     Ish3n    Idrill    Ipinch                  P_Thick_Fail\n")
-    w(i10(24) + i10(10) + i10(2) + i10(1) + i10(0) + "          " + r20(0.0) + "\n")
+    # QEPH(24)+Ismstr=10 ruptured at rest (no PLOAD). Belytschko Ismstr=10 N=1 is stable.
+    w(i10(1) + i10(10) + i10(2) + i10(1) + i10(0) + "          " + r20(0.0) + "\n")
     w("#                 Hm                  Hf                  Hr                  Dm                  Dn\n")
     w(r20(0.0) + r20(0.0) + r20(0.0) + r20(0.05) + r20(0.0) + "\n")
     w("#         N                         Thick              Ashear              Ithick     Iplas      Ipos\n")
@@ -300,11 +301,11 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w(f"self-contact kiss Gapmin={CONTACT_KISS:.8g} m (=CONTACT_KISS, not puffy)\n")
     # surf_s surf_m Istf Ithe Igap Iedge Ibag Idel Icurv
     # Ibag=0 (no MONVOL). Iedge=2 all segment edges. Igap=1000 → gap=Gapmin.
-    w(i10(SURF_ID) + i10(0) + i10(5) + i10(0) + i10(1000) + i10(2) + i10(0) + i10(1000) + i10(0) + "\n")
+    w(i10(SURF_ID) + i10(0) + i10(5) + i10(0) + i10(4) + i10(2) + i10(0) + i10(1000) + i10(0) + "\n")
     w("#          Fscalegap               Gapmax      Edge_scale_gap\n")
     w(r20(1.0) + r20(0.0) + r20(1.0) + "\n")
     w("#             Stmin                Stmax           mesh_size                dtmin  Irem_gap   Irem_i2\n")
-    w(r20(0.0) + r20(0.0) + r20(0.4) + r20(0.0) + i10(2) + i10(2) + "\n")
+    w(r20(0.0) + r20(0.0) + r20(0.4) + r20(1.0e-6) + i10(2) + i10(2) + "\n")
     w("#              Stfac                 Fric               Gapmin               Tstart                Tstop\n")
     w(r20(1.0) + r20(0.1) + r20(CONTACT_KISS) + r20(0.0) + r20(1e30) + "\n")
     w("#      IBC                        Inacti                VISs                VISf              Bumult\n")
@@ -365,6 +366,8 @@ def write_engine(out: Path) -> None:
     w("/PRINT/-200\n")
     w("/DT\n")
     w("0.9 0.0\n")
+    w("/DT/NODA/CST\n")
+    w("0.9 1.0e-6\n")
     w("/DYREL\n")
     w("0.0 0.002\n")
     w("/END\n")
@@ -375,10 +378,10 @@ def write_law_card(path: Path, info: dict) -> None:
     lines = law_card_lines() + [
         "",
         "Contact / load",
-        "  /INTER/TYPE19 self-contact  Igap=1000 (constant gap)  Irem_gap=2  Inacti=6",
+        "  /INTER/TYPE19 self-contact  Igap=4 (var gap + neighbor skip)  Irem_gap=2  Inacti=6  dtmin=1e-6",
         f"  Gapmin  = {CONTACT_KISS:.16g} m",
         f"  /PLOAD  0 → {P_MAX:g} Pa in {T_RAMP}s, hold to {T_END}s",
-        f"  /PROP   N=1  Ismstr=10  Ishell=24 (QEPH)  Ithick=1  Thick=H0",
+        f"  /PROP   N=1  Ismstr=10  Ishell=1 (Belytschko; QEPH ruptured at rest)  Ithick=1  Thick=H0",
         f"  3-2-1   A={info['bcs']['A']} XYZ  B={info['bcs']['B']} YZ  C={info['bcs']['C']} Z",
         f"  V0      = {info['V0_m3']:.8g} m^3",
         f"  mesh    = N={info['n']}  quads={info['nquads']}  orphan tris={info['norphans']}",

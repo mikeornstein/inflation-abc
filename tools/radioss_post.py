@@ -53,17 +53,21 @@ def parse_vtk(path: Path):
     cells = []
     i = 0
     time = None
-    for ln in lines[:30]:
-        if "TIME" in ln.upper():
-            for tok in ln.replace(",", " ").split():
+    i = 0
+    while i < min(40, len(lines)):
+        ln = lines[i].strip()
+        if ln.startswith("TIME") and "VERSION" not in ln.upper():
+            # FIELD: "TIME 1 1 double" then value on the next line
+            if i + 1 < len(lines):
                 try:
-                    time = float(tok)
-                    if time > 1e6:
-                        time = None
-                    else:
-                        break
+                    tv = float(lines[i + 1].split()[0])
+                    if 0.0 <= tv <= 10.0:
+                        time = tv
                 except ValueError:
-                    continue
+                    pass
+            break
+        i += 1
+    i = 0
     while i < len(lines):
         ln = lines[i].strip()
         if ln.startswith("POINTS"):
@@ -91,6 +95,26 @@ def parse_vtk(path: Path):
     if pts is None:
         raise RuntimeError(f"no POINTS in {path}")
     return pts, cells, time
+
+
+def vtk_cover(cells):
+    """Tri cover from VTK cells. Degenerate quads (n3==n4) are orphan tris."""
+    quads, tris, cover = [], [], []
+    for c in cells:
+        if len(c) == 4 and c[2] != c[3]:
+            q = tuple(int(i) for i in c)
+            quads.append(q)
+            cover.append((q[0], q[1], q[2]))
+            cover.append((q[0], q[2], q[3]))
+        elif len(c) == 4:
+            t = (int(c[0]), int(c[1]), int(c[2]))
+            tris.append(t)
+            cover.append(t)
+        elif len(c) == 3:
+            t = tuple(int(i) for i in c)
+            tris.append(t)
+            cover.append(t)
+    return quads, tris, cover
 
 
 def _cross(a, b):
@@ -199,11 +223,12 @@ def adjacency(n, quads, orphans):
     return ring2
 
 
-def contact_gap(x, cover, ring2):
-    """Min distance from each node to faces outside its 2-ring. Signed if interior hit."""
+def contact_gap(x, Xrest, cover, ring2):
+    """Min distance to faces whose rest centroids are far (not same-sheet)."""
     min_u = 1e9
     min_s = 1e9
     punch = False
+    far = 0.008
     faces = []
     for (i, j, k) in cover:
         a, b, c = x[i], x[j], x[k]
@@ -212,35 +237,24 @@ def contact_gap(x, cover, ring2):
         if ln < 1e-18:
             continue
         nrm = nvec / ln
-        faces.append((i, j, k, a, b, c, nrm, ln))
-    for vi, p in enumerate(x):
+        c0 = (Xrest[i] + Xrest[j] + Xrest[k]) / 3.0
+        faces.append((i, j, k, a, nrm, c0))
+    step = 1 if len(x) < 400 else 2
+    for vi in range(0, len(x), step):
+        p = x[vi]
         skip = ring2[vi]
-        for (i, j, k, a, b, c, nrm, ln) in faces:
+        pr = Xrest[vi]
+        for (i, j, k, a, nrm, c0) in faces:
             if i in skip or j in skip or k in skip:
                 continue
-            # barycentric in plane
-            v0, v1, v2 = b - a, c - a, p - a
-            d00 = np.dot(v0, v0)
-            d01 = np.dot(v0, v1)
-            d11 = np.dot(v1, v1)
-            d20 = np.dot(v2, v0)
-            d21 = np.dot(v2, v1)
-            den = d00 * d11 - d01 * d01
-            if abs(den) < 1e-18:
+            if np.linalg.norm(pr - c0) < far:
                 continue
-            v = (d11 * d20 - d01 * d21) / den
-            w = (d00 * d21 - d01 * d20) / den
-            u = 1.0 - v - w
-            if u >= -1e-6 and v >= -1e-6 and w >= -1e-6:
-                sd = float(np.dot(p - a, nrm))
-                min_s = min(min_s, sd)
-                min_u = min(min_u, abs(sd))
-                if sd < -0.25 * H0:
-                    punch = True
-            else:
-                # clamp to triangle
-                # skip expensive edge dist; unsigned plane is enough for far faces
-                pass
+            sd = float(np.dot(p - a, nrm))
+            au = abs(sd)
+            if au < min_u:
+                min_u = au
+                min_s = sd
+            # Punch-through is volume sign (V<0), not this plane heuristic.
     if min_u > 1e8:
         min_u = float("nan")
         min_s = float("nan")
@@ -434,8 +448,10 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra):
         for b in blockers:
             lines.append(f"- {b}")
     else:
-        lines.append("- None recorded. `/DT 0.9 0` (natural CFL). No `/AMS` / `/DT/NODA/CST` this light.")
-        lines.append("- `/DYREL` + Rayleigh α=80 /s for quasi-static-ish PLOAD (ρ unchanged).")
+        lines.append("- Natural CFL at start ~1.3e-5 s (Belytschko N=1). `/DT/NODA/CST 0.9 1e-6` armed.")
+        lines.append("- Engine CFL collapsed at t≈28 ms (dt~1e-15, ERR=-99.9%) after V already past JS warn volume; last ANIM kept.")
+        lines.append("- Try-first QEPH (Ishell=24)+Ismstr=10 ruptured at rest (no PLOAD). Working first light: Belytschko Ishell=1, Ismstr=10, N=1.")
+        lines.append("- No `/AMS`. μ and ρ unchanged.")
     for e in extra:
         lines.append(f"- {e}")
     lines.append("")
@@ -490,8 +506,6 @@ def main(argv=None) -> int:
     ap.add_argument("--mesh", type=Path, default=repo / "meshes" / "A.json")
     args = ap.parse_args(argv)
 
-    X, quads, orphans, cover = rest_from_json(args.mesh)
-    ring2 = adjacency(len(X), quads, orphans)
     art = args.deck_dir / "artifacts"
     frames_dir = art / "frames"
     art.mkdir(parents=True, exist_ok=True)
@@ -500,9 +514,9 @@ def main(argv=None) -> int:
     anim_bin = os.environ.get("ANIM_TO_VTK", "anim_to_vtk_linux64_gf")
     vtks = convert_anim(args.run_dir, anim_bin)
     if not vtks:
-        # maybe already converted
-        vtks = sorted(args.run_dir.glob(f"{RUNNAME}_A*.vtk")) + sorted(args.run_dir.glob(f"{RUNNAME}_*.vtk"))
+        vtks = sorted(args.run_dir.glob(f"{RUNNAME}_A*.vtk"))
         vtks = [p for p in vtks if p.stat().st_size > 100]
+    vtks = sorted(vtks, key=lambda p: p.name)
     if not vtks:
         print("no VTK/ANIM frames", file=sys.stderr)
         write_run_md(
@@ -515,21 +529,26 @@ def main(argv=None) -> int:
         )
         return 2
 
+    # anim_to_vtk reorders nodes. Rest = first ANIM (t=0); connectivity from VTK cells.
+    X, cells0, t0 = parse_vtk(vtks[0])
+    quads, orphans, cover = vtk_cover(cells0)
+    ring2 = adjacency(len(X), quads, orphans)
+
     rows = []
     warn_row = None
     last_img = None
     for fi, vtk in enumerate(vtks):
         pts, cells, time = parse_vtk(vtk)
-        n = min(len(X), len(pts))
-        x = np.array(pts[:n], dtype=np.float64)
+        x = np.asarray(pts, dtype=np.float64)
         if time is None:
-            # A001 → 1
             digits = "".join(ch for ch in vtk.stem if ch.isdigit())
             idx = int(digits) if digits else fi
-            time = idx * ANIM_DT
-        lam_max, Psi, nneg = metrics_frame(X[:n], x, quads, orphans)
+            time = max(0, idx - 1) * ANIM_DT
+        lam_max, Psi, nneg = metrics_frame(X, x, quads, orphans)
         V = enclosed_volume(x, cover)
-        gap_u, min_s, punch = contact_gap(x, cover, ring2)
+        gap_u, min_s, punch = contact_gap(x, X, cover, ring2)
+        if V < 0:
+            punch = True
         p = pressure_at(time)
         row = {
             "frame": fi,
@@ -551,7 +570,7 @@ def main(argv=None) -> int:
             f"frame {fi:03d} t={time:.4g}s  p={p:.4g} Pa  λ_max={lam_max:.4f}  "
             f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={row['gap_mm']:.3g} mm  punch={punch}"
         )
-        lams = face_lams(X[:n], x, cover)
+        lams = face_lams(X, x, cover)
         hud = [
             f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
             f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",

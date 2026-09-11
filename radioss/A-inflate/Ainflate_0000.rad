@@ -48,7 +48,7 @@ Desmopan 85085A NH film; McMaster 1446T11 density not published
 /PROP/SHELL/1
 film membrane N=1 Ismstr=10 QEPH Ithick=1
 #    Ishell    Ismstr     Ish3n    Idrill    Ipinch                  P_Thick_Fail
-        24        10         2         1         0                           0.0
+         1        10         2         1         0                           0.0
 #                 Hm                  Hf                  Hr                  Dm                  Dn
                  0.0                 0.0                 0.0                0.05                 0.0
 #         N                         Thick              Ashear              Ithick     Iplas      Ipos
@@ -3222,11 +3222,11 @@ closed film (quads+orphan tris); outward normals; +PLOAD inflates
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /INTER/TYPE19/1
 self-contact kiss Gapmin=0.000762 m (=CONTACT_KISS, not puffy)
-         1         0         5         0      1000         2         0      1000         0
+         1         0         5         0         4         2         0      1000         0
 #          Fscalegap               Gapmax      Edge_scale_gap
                    1                 0.0                   1
 #             Stmin                Stmax           mesh_size                dtmin  Irem_gap   Irem_i2
-                 0.0                 0.0                 0.4                 0.0         2         2
+                 0.0                 0.0                 0.4               1E-06         2         2
 #              Stfac                 Fric               Gapmin               Tstart                Tstop
                    1                 0.1            0.000762                 0.0               1E+30
 #      IBC                        Inacti                VISs                VISf              Bumult

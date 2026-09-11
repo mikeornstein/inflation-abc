@@ -1,6 +1,10 @@
 radioss/opt/
 radioss/env.sh
 radioss/A-inflate/run/
+radioss/A-inflate/artifacts/frames/
+__pycache__/
+*.pyc
+.venv/
 __pycache__/
 *.pyc
 .venv/

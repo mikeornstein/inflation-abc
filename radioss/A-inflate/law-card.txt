@@ -11,10 +11,10 @@ LAW42 neo-Hookean (Ogden 1-term)
   WARN_LAM= 2
 
 Contact / load
-  /INTER/TYPE19 self-contact  Igap=1000 (constant gap)  Irem_gap=2  Inacti=6
+  /INTER/TYPE19 self-contact  Igap=4 (var gap + neighbor skip)  Irem_gap=2  Inacti=6  dtmin=1e-6
   Gapmin  = 0.000762 m
   /PLOAD  0 → 65000 Pa in 0.04s, hold to 0.05s
-  /PROP   N=1  Ismstr=10  Ishell=24 (QEPH)  Ithick=1  Thick=H0
+  /PROP   N=1  Ismstr=10  Ishell=1 (Belytschko; QEPH ruptured at rest)  Ithick=1  Thick=H0
   3-2-1   A=1235 XYZ  B=1299 YZ  C=1312 Z
   V0      = 0.00035398478 m^3
   mesh    = N=1554  quads=1540  orphan tris=28
