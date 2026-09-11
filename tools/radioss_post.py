@@ -25,6 +25,20 @@ if str(_TOOLS) not in sys.path:
 from mesh_to_radioss import ANIM_DT, P_MAX, T_RAMP, RUNNAME, load_mesh, quadify_orphans
 from radioss_law import CONTACT_KISS, H0, MU, RHO, WARN_LAM, law_card_lines
 
+
+def load_deck_meta(deck_dir: Path) -> dict:
+    p = deck_dir / "deck-meta.json"
+    if not p.exists():
+        return {
+            "P_MAX": P_MAX,
+            "T_RAMP": T_RAMP,
+            "T_END": 0.05,
+            "ANIM_DT": ANIM_DT,
+            "RUNNAME": RUNNAME,
+            "ams": False,
+        }
+    return json.loads(p.read_text())
+
 try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
@@ -191,12 +205,12 @@ def enclosed_volume(x, cover):
     return v
 
 
-def pressure_at(t: float) -> float:
+def pressure_at(t: float, *, p_max: float = P_MAX, t_ramp: float = T_RAMP) -> float:
     if t <= 0:
         return 0.0
-    if t >= T_RAMP:
-        return P_MAX
-    return P_MAX * (t / T_RAMP)
+    if t >= t_ramp:
+        return p_max
+    return p_max * (t / t_ramp)
 
 
 def adjacency(n, quads, orphans):
@@ -261,14 +275,12 @@ def contact_gap(x, Xrest, cover, ring2):
     return min_u, min_s, punch
 
 
-def convert_anim(run_dir: Path, anim_bin: str) -> list[Path]:
-    anims = sorted(p for p in run_dir.iterdir() if p.name.startswith(f"{RUNNAME}A") and p.is_file())
+def convert_anim(run_dir: Path, anim_bin: str, runname: str = RUNNAME) -> list[Path]:
+    anims = sorted(p for p in run_dir.iterdir() if p.name.startswith(f"{runname}A") and p.is_file())
     vtks = []
     for anim in anims:
-        tag = anim.name[len(RUNNAME) + 1 :]  # A001 → wait name is AinflateA001
-        # AinflateA001 → after RUNNAME "A001"
-        suffix = anim.name[len(RUNNAME) :]  # A001
-        vtk = run_dir / f"{RUNNAME}_{suffix}.vtk"
+        suffix = anim.name[len(runname) :]  # A001
+        vtk = run_dir / f"{runname}_{suffix}.vtk"
         if not vtk.exists() or vtk.stat().st_size < 100:
             with vtk.open("w") as out:
                 r = subprocess.run([anim_bin, str(anim)], stdout=out, stderr=subprocess.PIPE, text=True)
@@ -419,8 +431,55 @@ def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path, nframes: int | None = 
         )
 
 
-def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None):
-    lines = ["# A-inflate first light — RUN", ""]
+def lambda_field_stats(X, x, quads):
+    """Area-weighted λ stats on quads (max of two CST halves per quad)."""
+    lams = []
+    areas = []
+    for q in quads:
+        m = 1.0
+        a_sum = 0.0
+        for tri in ((q[0], q[1], q[2]), (q[0], q[2], q[3])):
+            lam1, lam2, A0, *_ = tri_stretch(X[list(tri)], x[list(tri)])
+            m = max(m, lam1, lam2)
+            a_sum += A0
+        lams.append(m)
+        areas.append(max(a_sum, 1e-18))
+    lams = np.asarray(lams, dtype=np.float64)
+    areas = np.asarray(areas, dtype=np.float64)
+    if len(lams) == 0:
+        return {
+            "lam_max": 1.0,
+            "lam_min": 1.0,
+            "lam_mean": 1.0,
+            "lam_aw_mean": 1.0,
+            "lam_p50": 1.0,
+            "lam_p90": 1.0,
+            "lam_p99": 1.0,
+            "n_quads": 0,
+        }
+    order = np.argsort(lams)
+    ls, w = lams[order], areas[order]
+    cw = np.cumsum(w)
+    cw = cw / cw[-1]
+
+    def pct(p):
+        return float(ls[np.searchsorted(cw, p / 100.0, side="left").clip(0, len(ls) - 1)])
+
+    aw_mean = float(np.sum(lams * areas) / np.sum(areas))
+    return {
+        "lam_max": float(lams.max()),
+        "lam_min": float(lams.min()),
+        "lam_mean": float(lams.mean()),
+        "lam_aw_mean": aw_mean,
+        "lam_p50": pct(50),
+        "lam_p90": pct(90),
+        "lam_p99": pct(99),
+        "n_quads": int(len(lams)),
+    }
+
+
+def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None, title=None):
+    lines = [title or "# A-inflate first light — RUN", ""]
     lines.append("Cloud VM job. OpenRadioss linux64_gf (`latest-20260728`). SI deck. **μ and ρ not retuned.**")
     lines.append("")
     lines.append("## Law card dump")
@@ -549,7 +608,15 @@ def main(argv=None) -> int:
     ap.add_argument("--run-dir", type=Path, default=repo / "radioss" / "A-inflate" / "run")
     ap.add_argument("--deck-dir", type=Path, default=repo / "radioss" / "A-inflate")
     ap.add_argument("--mesh", type=Path, default=repo / "meshes" / "A.json")
+    ap.add_argument("--label", type=str, default=None)
     args = ap.parse_args(argv)
+
+    meta = load_deck_meta(args.deck_dir)
+    runname = meta.get("RUNNAME", RUNNAME)
+    anim_dt = float(meta.get("ANIM_DT", ANIM_DT))
+    p_max = float(meta.get("P_MAX", P_MAX))
+    t_ramp = float(meta.get("T_RAMP", T_RAMP))
+    ams = bool(meta.get("ams"))
 
     art = args.deck_dir / "artifacts"
     frames_dir = art / "frames"
@@ -557,11 +624,12 @@ def main(argv=None) -> int:
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     anim_bin = os.environ.get("ANIM_TO_VTK", "anim_to_vtk_linux64_gf")
-    vtks = convert_anim(args.run_dir, anim_bin)
+    vtks = convert_anim(args.run_dir, anim_bin, runname=runname)
     if not vtks:
-        vtks = sorted(args.run_dir.glob(f"{RUNNAME}_A*.vtk"))
+        vtks = sorted(args.run_dir.glob(f"{runname}_A*.vtk"))
         vtks = [p for p in vtks if p.stat().st_size > 100]
     vtks = sorted(vtks, key=lambda p: p.name)
+    title = args.label or "# A-inflate first light — RUN"
     if not vtks:
         print("no VTK/ANIM frames", file=sys.stderr)
         write_run_md(
@@ -571,6 +639,7 @@ def main(argv=None) -> int:
             ["No ANIM/VTK frames — engine did not produce animation, or anim_to_vtk missing."]
             + scan_logs(args.run_dir),
             [],
+            title=title,
         )
         return 2
 
@@ -587,20 +656,22 @@ def main(argv=None) -> int:
 
     rows = []
     warn_row = None
+    warn_field = None
     last_img = None
+    last_field = None
     for fi, vtk in enumerate(vtks):
         pts, cells, time = parse_vtk(vtk)
         x = np.asarray(pts, dtype=np.float64)
         if time is None:
             digits = "".join(ch for ch in vtk.stem if ch.isdigit())
             idx = int(digits) if digits else fi
-            time = max(0, idx - 1) * ANIM_DT
+            time = max(0, idx - 1) * anim_dt
         lam_max, Psi, nneg = metrics_frame(X, x, quads, orphans)
         V = enclosed_volume(x, cover)
         gap_u, min_s, punch = contact_gap(x, X, cover, ring2)
         if V < 0:
             punch = True
-        p = pressure_at(time)
+        p = pressure_at(time, p_max=p_max, t_ramp=t_ramp)
         row = {
             "frame": fi,
             "file": vtk.name,
@@ -624,6 +695,8 @@ def main(argv=None) -> int:
             f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={row['gap_mm']:.3g} mm  punch={punch}"
         )
         lams = quad_lams(X, x, quads)
+        field = lambda_field_stats(X, x, quads)
+        last_field = field
         hud = [
             f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
             f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",
@@ -636,6 +709,7 @@ def main(argv=None) -> int:
         last_img = png
         if is_warn:
             warn_row = row
+            warn_field = field
             img.save(art / "warn-lambda2.png")
 
     with (art / "metrics.csv").open("w", newline="") as f:
@@ -644,13 +718,49 @@ def main(argv=None) -> int:
         w.writerows(rows)
     (art / "metrics.json").write_text(json.dumps(rows, indent=2))
 
+    cfl_before = warn_row is None and any(
+        "NODA/STOP" in b or "CFL" in b or "time step collapsed" in b for b in scan_logs(args.run_dir)
+    )
+    warn_payload = {
+        "reached_lambda2": warn_row is not None,
+        "cfl_before_lambda2": bool(cfl_before and warn_row is None),
+        "dynamic": True,
+        "ams": ams,
+        "n_quads": len(quads),
+        "n_tris": len(orphans),
+        "Ishell": 1,
+        "MU": MU,
+        "RHO": RHO,
+        "label": "dynamic PLOAD + /ADYREL (not Chiron QS; converged dynamic ≠ ABC apples)",
+    }
+    src = warn_row or (rows[-1] if rows else None)
+    if src:
+        warn_payload.update(
+            {
+                "frame": src["frame"],
+                "t": src["t"],
+                "p_Pa": src["p_Pa"],
+                "lam_max": src["lam_max"],
+                "V_mL": src["V_mL"],
+                "Psi_J": src["Psi_J"],
+                "gap_mm": src["gap_mm"],
+                "punch": src["punch"],
+                "Psi_neg_elems": src["Psi_neg_elems"],
+            }
+        )
+    field = warn_field or last_field
+    if field:
+        warn_payload["lambda_field"] = field
+    (art / "warn.json").write_text(json.dumps(warn_payload, indent=2) + "\n")
+    if field:
+        (art / "lambda_field.json").write_text(json.dumps(field, indent=2) + "\n")
+
     if warn_row is None and last_img:
         dest = art / "last-frame.png"
         dest.write_bytes(last_img.read_bytes())
 
     gif = art / "A-inflate.gif"
     mp4 = art / "A-inflate.mp4"
-    # GIF/MP4: rest → past λ≥2; drop the CFL blow-up frame (λ tens, V litres).
     gif_end = len(rows)
     for r in rows:
         if r["lam_max"] > 8.0 or r["V_mL"] > 20.0 * max(rows[0]["V_mL"], 1.0):
@@ -661,9 +771,15 @@ def main(argv=None) -> int:
 
     blockers = scan_logs(args.run_dir)
     extra = []
-    extra.append("Natural CFL ~2.3e-5 s (Belytschko N=1, 1554 quads). `/DT/NODA/STOP 0.9 1e-6` ends the run at collapse (~28 ms) instead of hanging at dt~1e-15.")
-    extra.append("Try-first QEPH (Ishell=24)+Ismstr=10 ruptured at rest. Working first light: Belytschko Ishell=1, Ismstr=10, N=1.")
-    extra.append("No `/AMS`. μ and ρ unchanged. `/ADYREL` damps the explicit tape (first λ≥2 later than undamped 3-2-1 first light; still dynamic, not Chiron QS).")
+    extra.append(
+        f"Belytschko N=1, {len(quads)} quads. `/DT/NODA/STOP 0.9 1e-6` hang guard "
+        f"(not NODA/CST). {'/AMS on (Kareem fork).' if ams else 'No /AMS on this tape.'}"
+    )
+    extra.append("Working PROP: Belytschko Ishell=1, Ismstr=10, N=1. μ and ρ unchanged.")
+    extra.append(
+        "Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. "
+        "Converged dynamic ≠ ABC apples claim vs Chiron QS."
+    )
     if orphans:
         extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
     if not gif.exists() and not mp4.exists():
@@ -675,6 +791,7 @@ def main(argv=None) -> int:
         blockers,
         extra,
         mesh_note=f"{len(quads)} quads, {len(orphans)} tris",
+        title=title,
     )
     print(f"wrote {args.deck_dir / 'RUN.md'}")
     print(f"warn frame: {warn_row['frame'] if warn_row else 'NOT REACHED'}")
