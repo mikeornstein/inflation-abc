@@ -1,0 +1,20 @@
+#RADIOSS ENGINE
+#---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
+/RUN/Ainflate/1
+0.05
+/TFILE
+0.001
+/ANIM/DT
+0.0 0.002
+/ANIM/VECT/DISP
+/ANIM/VECT/CONT
+/ANIM/ELEM/ENER
+/ANIM/ELEM/HOURG
+/ANIM/SHELL/THIC
+/ANIM/SHELL/TENS/STRAIN/MEMB
+/PRINT/-200
+/DT
+0.9 0.0
+/DYREL
+0.0 0.002
+/END

@@ -1,0 +1,5 @@
+radioss/opt/
+radioss/A-inflate/run/
+__pycache__/
+*.pyc
+.venv/

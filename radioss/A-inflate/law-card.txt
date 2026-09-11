@@ -1,0 +1,20 @@
+LAW42 neo-Hookean (Ogden 1-term)
+  μ1      = 3151888.914285714 Pa   # grill eng. μ = (800 * 6894.757) / 1.75 ; not invented
+  α1      = 2
+  μp,αp   = 0 for p=2..10
+  ν       = 0.495  (≤ 0.495)
+  M       = 0  (no Prony)
+  Iform   = 1 (standard Ogden SED)
+  H0      = 0.000381 m  (0.015*0.0254)
+  ρ       = 1130 kg/m^3  # Desmopan 85085A ISO 1183-1; McMaster 1446T11 density not published
+  Gapmin  = 0.000762 m  # CONTACT_KISS = max(2*H0, 1e-4)
+  WARN_LAM= 2
+
+Contact / load
+  /INTER/TYPE19 self-contact  Igap=1000 (constant gap)  Irem_gap=2  Inacti=6
+  Gapmin  = 0.000762 m
+  /PLOAD  0 → 65000 Pa in 0.04s, hold to 0.05s
+  /PROP   N=1  Ismstr=10  Ishell=24 (QEPH)  Ithick=1  Thick=H0
+  3-2-1   A=1235 XYZ  B=1299 YZ  C=1312 Z
+  V0      = 0.00035398478 m^3
+  mesh    = N=1554  quads=1540  orphan tris=28
