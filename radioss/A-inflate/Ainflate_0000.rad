@@ -13,9 +13,12 @@
 #   ρ       = 1130 kg/m^3  # Desmopan 85085A ISO 1183-1; McMaster 1446T11 density not published
 #   Gapmin  = 0.000762 m  # CONTACT_KISS = max(2*H0, 1e-4)
 #   WARN_LAM= 2
-# Mesh 1554 nodes, 1540 quads, 28 orphan tris
+# Mesh 1554 nodes, 1554 /SHELL quads (source 1540 quads + 28 orphan faceTris paired; SH3N=0)
+# Midplane not remeshed (ship A.json nMidTris=0). Cap orphans quadified only.
 # Rest enclosed volume V0 = 0.00035398478 m^3 (354 mL)
-# 3-2-1 nodes (1-based): A=1235 XYZ  B=1299 YZ  C=1312 Z
+# Free-free: no /BCS. OpenRadioss explicit inertial-relief analogue = /ADYREL (engine)
+#   + /DAMP Rayleigh mass (starter). Radioss has no PARAM,INREL (that is OptiStruct).
+#   Closed /PLOAD is self-equilibrated (net F≈0); /ADYREL+/DAMP kill residual RB drift.
 # PLOAD ramp 0 → 65000 Pa in 0.04s, hold to 0.05s (not MONVOL)
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /BEGIN
@@ -55,10 +58,7 @@ film membrane N=1 Ismstr=10 QEPH Ithick=1
          1                      0.000381                 0.0                   1         0         0
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /PART/1
-letter A quads (1540)
-         1         1         0
-/PART/2
-letter A orphan cap tris (28)
+letter A all-quad film (1554 shells; SH3N=0)
          1         1         0
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /NODE
@@ -3158,67 +3158,32 @@ letter A orphan cap tris (28)
       1538      1234      1288      1398      1344
       1539      1344      1398      1508      1454
       1540      1454      1508        64        10
-#---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
-/SH3N/2
-      2001       272       214        52
-      2002       272        52       250
-      2003       774       752       554
-      2004       774       554       716
-      2005       105       130       280
-      2006       105       280       255
-      2007       607       757       782
-      2008       607       782       632
-      2009        98       115        97
-      2010        98        97        44
-      2011       600       546       599
-      2012       600       599       617
-      2013        85       219        84
-      2014        85        84        31
-      2015       587       533       586
-      2016       587       586       721
-      2017        57         2        58
-      2018        57        58       169
-      2019       559       671       560
-      2020       559       560       504
-      2021        64        11        65
-      2022        64        65       170
-      2023       566       672       567
-      2024       566       567       513
-      2025        82       218        81
-      2026        82        81        28
-      2027       584       530       583
-      2028       584       583       720
+      1541       214        52       250       272
+      1542       752       554       716       774
+      1543       130       280       255       105
+      1544       757       782       632       607
+      1545       115        97        44        98
+      1546       546       599       617       600
+      1547       219        84        31        85
+      1548       533       586       721       587
+      1549         2        58       169        57
+      1550       671       560       504       559
+      1551        11        65       170        64
+      1552       672       567       513       566
+      1553       218        81        28        82
+      1554       530       583       720       584
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /GRNOD/PART/1
-all film nodes
-         1         2
-/GRNOD/NODE/2
-3-2-1 A translations XYZ
-      1235
-/GRNOD/NODE/3
-3-2-1 B translations YZ
-      1299
-/GRNOD/NODE/4
-3-2-1 C translation Z
-      1312
-#---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
-/BCS/1
-3-2-1 A  XYZ
-   111 000         0         2
-/BCS/2
-3-2-1 B  YZ
-   011 000         0         3
-/BCS/3
-3-2-1 C  Z
-   001 000         0         4
+all film nodes (free-free; no 3-2-1 pins)
+         1
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /DAMP/1
-Rayleigh mass damping (rho unchanged)
+Rayleigh mass damping (rho unchanged); free-free RB sink with engine /ADYREL
                   80                 0.0         1         0                 0.0               1E+30
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /SURF/PART/1
-closed film (quads+orphan tris); outward normals; +PLOAD inflates
-         1         2
+closed all-quad film; outward normals; +PLOAD inflates
+         1
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /INTER/TYPE19/1
 self-contact kiss Gapmin=0.000762 m (=CONTACT_KISS, not puffy)
@@ -3249,7 +3214,7 @@ internal pressure on film (positive = outward / inflate)
 /TH/PART/1
 part energy
 DEF
-         1         2
+         1
 /TH/INTER/1
 TYPE19 contact
 DEF

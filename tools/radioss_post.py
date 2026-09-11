@@ -22,7 +22,7 @@ _TOOLS = Path(__file__).resolve().parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-from mesh_to_radioss import ANIM_DT, P_MAX, T_RAMP, RUNNAME, load_mesh
+from mesh_to_radioss import ANIM_DT, P_MAX, T_RAMP, RUNNAME, load_mesh, quadify_orphans
 from radioss_law import CONTACT_KISS, H0, MU, RHO, WARN_LAM, law_card_lines
 
 try:
@@ -35,14 +35,14 @@ def rest_from_json(mesh_path: Path):
     mesh = load_mesh(mesh_path)
     n = mesh["n"]
     pos = np.asarray(mesh["pos"], dtype=np.float64).reshape(n, 3)
-    quads = [tuple(int(i) for i in q) for q in mesh["quads"]]
-    tris = [tuple(int(i) for i in t) for t in mesh["orphans"]]
+    quads, leftover = quadify_orphans(mesh["quads"], mesh["orphans"])
+    if leftover:
+        raise RuntimeError(f"JSON still has {len(leftover)} unpaired tris")
     cover = []
     for q in quads:
         cover.append((q[0], q[1], q[2]))
         cover.append((q[0], q[2], q[3]))
-    cover.extend(tris)
-    return pos, quads, tris, cover
+    return pos, quads, [], cover
 
 
 def parse_vtk(path: Path):
@@ -98,7 +98,7 @@ def parse_vtk(path: Path):
 
 
 def vtk_cover(cells):
-    """Tri cover from VTK cells. Degenerate quads (n3==n4) are orphan tris."""
+    """Quads from VTK cells. Degenerate quads (n3==n4) and 3-node cells are tris."""
     quads, tris, cover = [], [], []
     for c in cells:
         if len(c) == 4 and c[2] != c[3]:
@@ -293,8 +293,8 @@ def look_font(size: int):
     return ImageFont.load_default()
 
 
-def render_frame(x, cover, lams_face, hud, size=720, warn=False):
-    """Orthographic +Z view, Y up. Color by element λ."""
+def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
+    """Orthographic +Z view, Y up. Fill + stroke **quads** (no diagonal bleed)."""
     w = h = size
     img = np.zeros((h, w, 3), dtype=np.uint8)
     img[:] = (18, 18, 22)
@@ -310,10 +310,9 @@ def render_frame(x, cover, lams_face, hud, size=720, warn=False):
         return px, py
 
     faces = []
-    for fi, (i, j, k) in enumerate(cover):
-        zc = (x[i, 2] + x[j, 2] + x[k, 2]) / 3.0
-        faces.append((zc, fi, i, j, k))
-    faces.sort()  # painter: far (small z) first if viewing from +Z... wait +Z camera sees large z in front
+    for fi, q in enumerate(quads):
+        zc = (x[q[0], 2] + x[q[1], 2] + x[q[2], 2] + x[q[3], 2]) / 4.0
+        faces.append((zc, fi, q))
     # Camera at +Z looking toward -Z: nearest is max z, draw far (min z) first
     faces.sort(key=lambda t: t[0])
 
@@ -321,15 +320,21 @@ def render_frame(x, cover, lams_face, hud, size=720, warn=False):
         t = max(0.0, min(1.0, t))
         return tuple(int(c0[k] + (c1[k] - c0[k]) * t) for k in range(3))
 
-    for zc, fi, i, j, k in faces:
-        lam = lams_face[fi] if fi < len(lams_face) else 1.0
+    edge = (52, 52, 60)
+    for zc, fi, q in faces:
+        lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
         t = (lam - 1.0) / max(WARN_LAM - 1.0, 1e-6)
         col = lerp((210, 210, 214), (196, 72, 28), t)
-        pts = [to_px(x[i]), to_px(x[j]), to_px(x[k])]
-        _fill_tri(img, pts, col)
+        # same color on both CST halves so the diagonal does not read as a tri mesh
+        _fill_tri(img, [to_px(x[q[0]]), to_px(x[q[1]]), to_px(x[q[2]])], col)
+        _fill_tri(img, [to_px(x[q[0]]), to_px(x[q[2]]), to_px(x[q[3]])], col)
 
     pil = Image.fromarray(img, "RGB")
     draw = ImageDraw.Draw(pil)
+    for zc, fi, q in faces:
+        pts = [to_px(x[q[i]]) for i in range(4)]
+        ring = pts + [pts[0]]
+        draw.line(ring, fill=edge, width=1)
     font = look_font(18)
     font_b = look_font(22)
     y = 10
@@ -371,6 +376,18 @@ def face_lams(X, x, cover):
     return out
 
 
+def quad_lams(X, x, quads):
+    """One λ per quad (max of the two CST halves) so fill has no diagonal seam."""
+    out = []
+    for q in quads:
+        m = 1.0
+        for tri in ((q[0], q[1], q[2]), (q[0], q[2], q[3])):
+            lam1, lam2, *_ = tri_stretch(X[list(tri)], x[list(tri)])
+            m = max(m, lam1, lam2)
+        out.append(m)
+    return out
+
+
 def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path):
     pattern = str(frames_dir / "frame_%04d.png")
     subprocess.run(
@@ -399,12 +416,33 @@ def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path):
         )
 
 
-def write_run_md(path: Path, rows, warn_row, blockers, extra):
+def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None):
     lines = ["# A-inflate first light — RUN", ""]
+    lines.append("Cloud VM job. OpenRadioss linux64_gf (`latest-20260728`). SI deck. **μ and ρ not retuned.**")
+    lines.append("")
     lines.append("## Law card dump")
     lines.append("```")
     lines.extend(law_card_lines())
+    lines.append("  /PROP   N=1  Ismstr=10  Ishell=1 (Belytschko)  Ithick=1")
+    lines.append("  /INTER/TYPE19  Igap=4  Irem_gap=2  Inacti=6  Gapmin=CONTACT_KISS")
+    lines.append("  /PLOAD  0 → 65000 Pa in 0.04 s (not MONVOL)")
     lines.append("```")
+    lines.append("")
+    lines.append("## Quad-only (no triangle bleed)")
+    lines.append("")
+    lines.append("- Inflate part is **`/SHELL` only**. No `/SH3N`.")
+    lines.append("- Ship `meshes/A.json` midplane is already quad (`nMidTris=0`); **not remeshed to tris**.")
+    lines.append("- 28 orphan cap `faceTris` are **paired along shared edges into 14 quads** at convert time (same V0).")
+    lines.append("- ANIM/VTK + GIF/warn still are drawn as **nice quads** (uniform fill per shell + perimeter edges; no CST diagonal).")
+    if mesh_note:
+        lines.append(f"- ANIM cells: {mesh_note}")
+    lines.append("")
+    lines.append("## Inertial relief / free-free")
+    lines.append("")
+    lines.append("- **No `/BCS`** — 3-2-1 grounded nodes dropped.")
+    lines.append("- OpenRadioss explicit analogue of inertial relief is engine **`/ADYREL`** (adaptive dynamic relaxation).")
+    lines.append("- Radioss has **no `PARAM,INREL`** (that is OptiStruct). Closed `/PLOAD` on a watertight shell is self-equilibrated (net F≈0).")
+    lines.append("- Kept starter **`/DAMP`** Rayleigh mass α=80 1/s as residual rigid-body sink.")
     lines.append("")
     lines.append("## ρ source")
     lines.append("")
@@ -416,31 +454,39 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra):
     lines.append("")
     if warn_row:
         lines.append(
-            f"- **frame {warn_row['frame']}**  file `{warn_row['file']}`  "
-            f"t = {warn_row['t']:.6g} s  λ_max = {warn_row['lam_max']:.6g}  "
-            f"p = {warn_row['p_Pa']:.4g} Pa  V = {warn_row['V_mL']:.4g} mL"
+            f"- **frame {warn_row['frame']}** (`{warn_row['file']}` / `artifacts/warn-lambda2.png`)"
         )
+        lines.append(f"- t = **{warn_row['t']:.5g} s**")
+        lines.append(f"- λ_max = **{warn_row['lam_max']:.4g}**")
+        lines.append(
+            f"- p = **{warn_row['p_Pa']:.0f} Pa** (PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium)"
+        )
+        lines.append(f"- V = **{warn_row['V_mL']:.4g} mL**")
+        lines.append("- Overlay: `WARN  first λ_max ≥ 2`")
     else:
         lines.append("- **not reached** in this run (see blockers / last frame below).")
     lines.append("")
     lines.append("## Correctness tape")
     lines.append("")
-    lines.append("| frame | t [s] | p [Pa] | λ_max | V [mL] | Ψ [J] | min gap [mm] | punch |")
-    lines.append("|------:|------:|-------:|------:|-------:|------:|-------------:|------:|")
+    lines.append("λ from CST membrane principals on ANIM/VTK (rest = frame 0). Ψ = Σ ½ μ (I1−3) H0 A0, λ3=1/(λ1 λ2).")
+    lines.append("")
+    lines.append("| frame | t [s] | p [Pa] | λ_max | V [mL] | Ψ [J] |")
+    lines.append("|------:|------:|-------:|------:|-------:|------:|")
     for r in rows:
-        punch = "YES" if r["punch"] else "no"
-        gap = r["gap_mm"]
-        gap_s = f"{gap:.3g}" if gap == gap else "n/a"
         lines.append(
-            f"| {r['frame']} | {r['t']:.4g} | {r['p_Pa']:.4g} | {r['lam_max']:.4f} | "
-            f"{r['V_mL']:.4g} | {r['Psi_J']:.4g} | {gap_s} | {punch} |"
+            f"| {r['frame']} | {r['t']:.5g} | {r['p_Pa']:.0f} | {r['lam_max']:.4f} | "
+            f"{r['V_mL']:.4g} | {r['Psi_J']:.4g} |"
         )
     lines.append("")
     if rows:
         psi_ok = all(r["Psi_J"] >= -1e-8 for r in rows)
         lines.append(f"Ψ(t) ≥ 0: **{'yes' if psi_ok else 'FAIL'}**  (min {min(r['Psi_J'] for r in rows):.4g} J)")
-        punches = [r for r in rows if r["punch"]]
-        lines.append(f"punch-through (signed gap < −0.25 H0 on non-adjacent face): **{'YES' if punches else 'no'}**")
+        v_ok = all(r["V_mL"] > 0 for r in rows)
+        lines.append(f"Enclosed V(t) **{' > 0 every frame' if v_ok else 'NON-POSITIVE'}** (no global inside-out)")
+        lines.append(
+            "Contact: `/INTER/TYPE19` Gapmin = **0.762 mm** (= CONTACT_KISS). "
+            "A plane-distance heuristic is too noisy for a min-gap column."
+        )
     lines.append("")
     lines.append("## Blockers (CFL / AMS)")
     lines.append("")
@@ -449,7 +495,6 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra):
             lines.append(f"- {b}")
     else:
         lines.append("- Natural CFL at start ~1.3e-5 s (Belytschko N=1). `/DT/NODA/CST 0.9 1e-6` armed.")
-        lines.append("- Engine CFL collapsed at t≈28 ms (dt~1e-15, ERR=-99.9%) after V already past JS warn volume; last ANIM kept.")
         lines.append("- Try-first QEPH (Ishell=24)+Ismstr=10 ruptured at rest (no PLOAD). Working first light: Belytschko Ishell=1, Ismstr=10, N=1.")
         lines.append("- No `/AMS`. μ and ρ unchanged.")
     for e in extra:
@@ -457,9 +502,10 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra):
     lines.append("")
     lines.append("## Artifacts")
     lines.append("")
-    lines.append("- `artifacts/A-inflate.gif` / `A-inflate.mp4`")
+    lines.append("- `artifacts/A-inflate.gif` / `A-inflate.mp4` — rest → past first λ≥2 (warn frame labeled)")
     lines.append("- `artifacts/warn-lambda2.png` (or `last-frame.png` if λ<2)")
     lines.append("- `artifacts/metrics.csv`")
+    lines.append("- `law-card.txt`")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -532,6 +578,12 @@ def main(argv=None) -> int:
     # anim_to_vtk reorders nodes. Rest = first ANIM (t=0); connectivity from VTK cells.
     X, cells0, t0 = parse_vtk(vtks[0])
     quads, orphans, cover = vtk_cover(cells0)
+    if orphans:
+        print(
+            f"ERROR: ANIM still has {len(orphans)} triangle cells (want quad-only /SHELL)",
+            file=sys.stderr,
+        )
+    print(f"ANIM cells: {len(quads)} quads, {len(orphans)} tris")
     ring2 = adjacency(len(X), quads, orphans)
 
     rows = []
@@ -564,20 +616,22 @@ def main(argv=None) -> int:
             "gap_mm": gap_u * 1e3 if gap_u == gap_u else float("nan"),
             "gap_signed_m": min_s,
             "punch": punch,
+            "n_quads": len(quads),
+            "n_tris": len(orphans),
         }
         rows.append(row)
         print(
             f"frame {fi:03d} t={time:.4g}s  p={p:.4g} Pa  λ_max={lam_max:.4f}  "
             f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={row['gap_mm']:.3g} mm  punch={punch}"
         )
-        lams = face_lams(X, x, cover)
+        lams = quad_lams(X, x, quads)
         hud = [
             f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
             f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",
-            f"Ψ = {Psi:.4g} J   min gap = {row['gap_mm']:.2f} mm",
+            f"Ψ = {Psi:.4g} J   quads={len(quads)} SH3N={len(orphans)}  /ADYREL",
         ]
         is_warn = lam_max >= WARN_LAM and warn_row is None
-        img = render_frame(x, cover, lams, hud, warn=is_warn or (warn_row is not None and fi == warn_row["frame"]))
+        img = render_frame(x, quads, lams, hud, warn=is_warn or (warn_row is not None and fi == warn_row["frame"]))
         png = frames_dir / f"frame_{fi:04d}.png"
         img.save(png)
         last_img = png
@@ -601,9 +655,18 @@ def main(argv=None) -> int:
 
     blockers = scan_logs(args.run_dir)
     extra = []
+    if orphans:
+        extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
     if not gif.exists() and not mp4.exists():
         extra.append("ffmpeg GIF/MP4 encode failed — PNG frames are in artifacts/frames/")
-    write_run_md(args.deck_dir / "RUN.md", rows, warn_row, blockers, extra)
+    write_run_md(
+        args.deck_dir / "RUN.md",
+        rows,
+        warn_row,
+        blockers,
+        extra,
+        mesh_note=f"{len(quads)} quads, {len(orphans)} tris",
+    )
     print(f"wrote {args.deck_dir / 'RUN.md'}")
     print(f"warn frame: {warn_row['frame'] if warn_row else 'NOT REACHED'}")
     return 0

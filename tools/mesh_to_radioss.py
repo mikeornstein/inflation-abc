@@ -2,12 +2,15 @@
 """Convert Inflation ABC bake JSON (meshes/A.json) to an OpenRadioss deck.
 
 Physics-first first light:
-  /PROP/SHELL  N=1  Ismstr=10  (QEPH, thickness update)
+  /PROP/SHELL  N=1  Ismstr=10  (Belytschko; QEPH ruptured at rest)
   /MAT/LAW42   μ1=MU  α1=2  other μp/αp=0  ν=0.495  Prony M=0
   /INTER/TYPE19 self-contact, Gapmin = CONTACT_KISS (do not soften)
   /PLOAD ramp  (not MONVOL)
+  all-quad /SHELL (orphan faceTris paired; no /SH3N in the inflate part)
+  free-free: no /BCS; engine /ADYREL + starter /DAMP
 
 SI units. Does not touch the web-mbd JS neo-Hookean path.
+Does not remesh the midplane (ship A.json nMidTris=0).
 """
 
 from __future__ import annotations
@@ -48,15 +51,11 @@ DAMP_ALPHA = 80.0  # 1/s  Rayleigh mass-proportional; ρ unchanged
 
 RUNNAME = "Ainflate"
 PART_QUAD = 1
-PART_TRI = 2
 PROP_ID = 1
 MAT_ID = 1
 SURF_ID = 1
 FUNCT_P = 1
 GRNOD_ALL = 1
-GRNOD_A = 2
-GRNOD_B = 3
-GRNOD_C = 4
 
 
 def i10(v: int = 0) -> str:
@@ -112,32 +111,51 @@ def node_xyz(pos, i: int):
     return pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]
 
 
-def pick_321(pos, n: int):
-    """3-2-1 RB kill on well-separated nodes. Does not pin a whole foot."""
-    nodes = [node_xyz(pos, i) for i in range(n)]
-    ys = [p[1] for p in nodes]
-    xs = [p[0] for p in nodes]
-    ymin, ymax = min(ys), max(ys)
-    xmin, xmax = min(xs), max(xs)
-    zabs = [abs(p[2]) for p in nodes]
-    zmid = sorted(zabs)[n // 4]
+def _merge_tri_pair(t1, t2, shared):
+    """Two tris sharing `shared` (sorted pair) → one quad. Keep t1 winding."""
+    t1 = [int(i) for i in t1]
+    t2 = [int(i) for i in t2]
+    sh = set(int(i) for i in shared)
+    u1 = next(v for v in t1 if v not in sh)
+    u2 = next(v for v in t2 if v not in sh)
+    i = t1.index(u1)
+    n1, n2 = t1[(i + 1) % 3], t1[(i + 2) % 3]
+    return (u1, n1, u2, n2)
 
-    def nearest(target, pred):
-        best, bid = None, None
-        for i, p in enumerate(nodes):
-            if not pred(p):
-                continue
-            d = (p[0] - target[0]) ** 2 + (p[1] - target[1]) ** 2 + (p[2] - target[2]) ** 2
-            if best is None or d < best:
-                best, bid = d, i
-        return bid
 
-    a = nearest((0.0, ymin, 0.0), lambda p: abs(p[2]) <= zmid + 1e-9)
-    b = nearest((xmax, 0.5 * (ymin + ymax), 0.0), lambda p: abs(p[2]) <= zmid + 1e-9)
-    c = nearest((xmin, ymax, 0.0), lambda p: abs(p[2]) <= zmid + 1e-9)
-    if a is None or b is None or c is None or len({a, b, c}) < 3:
-        a, b, c = 0, n // 2, n - 1
-    return a, b, c  # 0-based
+def quadify_orphans(quads, orphans):
+    """Pair orphan faceTris that share an edge into quads.
+
+    Does not remesh existing quads (midplane stays quad). Ship A.json
+    nMidTris=0; the 28 faceTris are cap orphans and pair 1:1 into 14 quads.
+    Returns (all_quads, leftover_tris). leftover must be empty for A inflate.
+    """
+    all_quads = [tuple(int(i) for i in q) for q in quads]
+    if not orphans:
+        return all_quads, []
+    from collections import defaultdict
+
+    edges = defaultdict(list)
+    tris = [tuple(int(i) for i in t) for t in orphans]
+    for ti, t in enumerate(tris):
+        if len(t) != 3:
+            raise SystemExit(f"orphan faceTri {ti} is not a triangle: {t}")
+        for j in range(3):
+            e = tuple(sorted((t[j], t[(j + 1) % 3])))
+            edges[e].append(ti)
+    used = set()
+    extra = []
+    for e, ids in edges.items():
+        if len(ids) != 2:
+            continue
+        a, b = ids
+        if a in used or b in used:
+            continue
+        used.add(a)
+        used.add(b)
+        extra.append(_merge_tri_pair(tris[a], tris[b], e))
+    leftover = [tris[i] for i in range(len(tris)) if i not in used]
+    return all_quads + extra, leftover
 
 
 def enclosed_volume(pos, quads, orphans) -> float:
@@ -161,15 +179,26 @@ def enclosed_volume(pos, quads, orphans) -> float:
 def write_starter(mesh: dict, out: Path) -> dict:
     n = mesh["n"]
     pos = mesh["pos"]
-    quads = mesh["quads"]
-    orphans = mesh["orphans"]
-    a0, b0, c0 = pick_321(pos, n)
-    vol0 = enclosed_volume(pos, quads, orphans)
+    src_quads = mesh["quads"]
+    src_orphans = mesh["orphans"]
+    quads, leftover = quadify_orphans(src_quads, src_orphans)
+    if leftover:
+        raise SystemExit(
+            f"quadify left {len(leftover)} unpaired tris — refuse /SH3N in inflate part"
+        )
+    vol0 = enclosed_volume(pos, src_quads, src_orphans)
+    vol_q = enclosed_volume(pos, quads, [])
+    if abs(vol_q - vol0) > 1e-12 * max(abs(vol0), 1e-12):
+        raise SystemExit(f"quadify changed V0: {vol0} → {vol_q}")
     info = {
         "n": n,
         "nquads": len(quads),
-        "norphans": len(orphans),
-        "bcs": {"A": a0 + 1, "B": b0 + 1, "C": c0 + 1},
+        "nquads_src": len(src_quads),
+        "norphans_src": len(src_orphans),
+        "norphans": 0,
+        "nsh3n": 0,
+        "bcs": None,
+        "ir": "/ADYREL + /DAMP (free-free; no /BCS)",
         "V0_m3": vol0,
         "MU": MU,
         "H0": H0,
@@ -189,9 +218,15 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w("# SI: kg, m, s, Pa. Do not retune μ or ρ.\n")
     for ln in law_card_lines():
         w(f"# {ln}\n")
-    w(f"# Mesh {n} nodes, {len(quads)} quads, {len(orphans)} orphan tris\n")
+    w(
+        f"# Mesh {n} nodes, {len(quads)} /SHELL quads "
+        f"(source {len(src_quads)} quads + {len(src_orphans)} orphan faceTris paired; SH3N=0)\n"
+    )
+    w("# Midplane not remeshed (ship A.json nMidTris=0). Cap orphans quadified only.\n")
     w(f"# Rest enclosed volume V0 = {vol0:.8g} m^3 ({vol0*1e6:.4g} mL)\n")
-    w(f"# 3-2-1 nodes (1-based): A={a0+1} XYZ  B={b0+1} YZ  C={c0+1} Z\n")
+    w("# Free-free: no /BCS. OpenRadioss explicit inertial-relief analogue = /ADYREL (engine)\n")
+    w("#   + /DAMP Rayleigh mass (starter). Radioss has no PARAM,INREL (that is OptiStruct).\n")
+    w("#   Closed /PLOAD is self-equilibrated (net F≈0); /ADYREL+/DAMP kill residual RB drift.\n")
     w(f"# PLOAD ramp 0 → {P_MAX:g} Pa in {T_RAMP}s, hold to {T_END}s (not MONVOL)\n")
     w(header_bar())
     w("/BEGIN\n")
@@ -237,10 +272,7 @@ def write_starter(mesh: dict, out: Path) -> dict:
 
     w(header_bar())
     w(f"/PART/{PART_QUAD}\n")
-    w("letter A quads (1540)\n")
-    w(i10(PROP_ID) + i10(MAT_ID) + i10(0) + "\n")
-    w(f"/PART/{PART_TRI}\n")
-    w("letter A orphan cap tris (28)\n")
+    w(f"letter A all-quad film ({len(quads)} shells; SH3N=0)\n")
     w(i10(PROP_ID) + i10(MAT_ID) + i10(0) + "\n")
 
     w(header_bar())
@@ -253,48 +285,24 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w(f"/SHELL/{PART_QUAD}\n")
     for e, q in enumerate(quads, start=1):
         n1, n2, n3, n4 = (int(q[0]) + 1, int(q[1]) + 1, int(q[2]) + 1, int(q[3]) + 1)
+        if n4 == n3:
+            raise SystemExit(f"degenerate quad (would bleed as tri) elem {e}: {q}")
         w(i10(e) + i10(n1) + i10(n2) + i10(n3) + i10(n4) + "\n")
 
     w(header_bar())
-    w(f"/SH3N/{PART_TRI}\n")
-    for e, t in enumerate(orphans, start=1):
-        n1, n2, n3 = int(t[0]) + 1, int(t[1]) + 1, int(t[2]) + 1
-        w(i10(2000 + e) + i10(n1) + i10(n2) + i10(n3) + "\n")
-
-    w(header_bar())
     w(f"/GRNOD/PART/{GRNOD_ALL}\n")
-    w("all film nodes\n")
-    w(i10(PART_QUAD) + i10(PART_TRI) + "\n")
-    w(f"/GRNOD/NODE/{GRNOD_A}\n")
-    w("3-2-1 A translations XYZ\n")
-    w(i10(a0 + 1) + "\n")
-    w(f"/GRNOD/NODE/{GRNOD_B}\n")
-    w("3-2-1 B translations YZ\n")
-    w(i10(b0 + 1) + "\n")
-    w(f"/GRNOD/NODE/{GRNOD_C}\n")
-    w("3-2-1 C translation Z\n")
-    w(i10(c0 + 1) + "\n")
-
-    w(header_bar())
-    w("/BCS/1\n")
-    w("3-2-1 A  XYZ\n")
-    w("   111 000" + i10(0) + i10(GRNOD_A) + "\n")
-    w("/BCS/2\n")
-    w("3-2-1 B  YZ\n")
-    w("   011 000" + i10(0) + i10(GRNOD_B) + "\n")
-    w("/BCS/3\n")
-    w("3-2-1 C  Z\n")
-    w("   001 000" + i10(0) + i10(GRNOD_C) + "\n")
+    w("all film nodes (free-free; no 3-2-1 pins)\n")
+    w(i10(PART_QUAD) + "\n")
 
     w(header_bar())
     w("/DAMP/1\n")
-    w("Rayleigh mass damping (rho unchanged)\n")
+    w("Rayleigh mass damping (rho unchanged); free-free RB sink with engine /ADYREL\n")
     w(r20(DAMP_ALPHA) + r20(0.0) + i10(GRNOD_ALL) + i10(0) + r20(0.0) + r20(1e30) + "\n")
 
     w(header_bar())
     w(f"/SURF/PART/{SURF_ID}\n")
-    w("closed film (quads+orphan tris); outward normals; +PLOAD inflates\n")
-    w(i10(PART_QUAD) + i10(PART_TRI) + "\n")
+    w("closed all-quad film; outward normals; +PLOAD inflates\n")
+    w(i10(PART_QUAD) + "\n")
 
     w(header_bar())
     w("/INTER/TYPE19/1\n")
@@ -332,7 +340,7 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w("/TH/PART/1\n")
     w("part energy\n")
     w("DEF\n")
-    w(i10(PART_QUAD) + i10(PART_TRI) + "\n")
+    w(i10(PART_QUAD) + "\n")
     w("/TH/INTER/1\n")
     w("TYPE19 contact\n")
     w("DEF\n")
@@ -368,8 +376,10 @@ def write_engine(out: Path) -> None:
     w("0.9 0.0\n")
     w("/DT/NODA/CST\n")
     w("0.9 1.0e-6\n")
-    w("/DYREL\n")
-    w("0.0 0.002\n")
+    w("# Free-free / inertial relief analogue (no /BCS pins).\n")
+    w("# /ADYREL = adaptive dynamic relaxation (OpenRadioss engine).\n")
+    w("# Radioss has no PARAM,INREL — that keyword is OptiStruct only.\n")
+    w("/ADYREL\n")
     w("/END\n")
     out.write_text("".join(lines))
 
@@ -382,9 +392,12 @@ def write_law_card(path: Path, info: dict) -> None:
         f"  Gapmin  = {CONTACT_KISS:.16g} m",
         f"  /PLOAD  0 → {P_MAX:g} Pa in {T_RAMP}s, hold to {T_END}s",
         f"  /PROP   N=1  Ismstr=10  Ishell=1 (Belytschko; QEPH ruptured at rest)  Ithick=1  Thick=H0",
-        f"  3-2-1   A={info['bcs']['A']} XYZ  B={info['bcs']['B']} YZ  C={info['bcs']['C']} Z",
+        "  /BCS    none (3-2-1 pins dropped)",
+        "  IR      /ADYREL (engine) + /DAMP Rayleigh α=80 1/s (starter) — explicit free-free",
+        "          OpenRadioss has no PARAM,INREL (OptiStruct). Closed /PLOAD is self-equilibrated.",
         f"  V0      = {info['V0_m3']:.8g} m^3",
-        f"  mesh    = N={info['n']}  quads={info['nquads']}  orphan tris={info['norphans']}",
+        f"  mesh    = N={info['n']}  /SHELL={info['nquads']}  /SH3N=0  "
+        f"(source quads={info['nquads_src']} orphan faceTris={info['norphans_src']} paired)",
     ]
     path.write_text("\n".join(lines) + "\n")
 
@@ -410,10 +423,10 @@ def main(argv=None) -> int:
         fetch_mesh(args.mesh)
     mesh = load_mesh(args.mesh)
     n, nq, nt = mesh["n"], len(mesh["quads"]), len(mesh["orphans"])
-    print(f"mesh {args.mesh}: N={n} quads={nq} orphan_tris={nt} type={mesh['elemType']}")
+    print(f"mesh {args.mesh}: N={n} source_quads={nq} orphan_tris={nt} type={mesh['elemType']}")
     if n != 1554 or nq != 1540 or nt != 28:
         print(
-            f"WARNING: expected N=1554 / 1540 quads / 28 orphan tris; got {n}/{nq}/{nt}",
+            f"WARNING: expected ship A N=1554 / 1540 quads / 28 orphan tris; got {n}/{nq}/{nt}",
             file=sys.stderr,
         )
 
@@ -425,17 +438,26 @@ def main(argv=None) -> int:
     print(f"wrote {starter}")
     print(f"wrote {engine}")
     print(f"μ1={MU:.8g} α1={ALPHA1} H0={H0:.8g} ν={NU} ρ={RHO} Gapmin={CONTACT_KISS:.8g}")
-    print(f"3-2-1 A={info['bcs']['A']} B={info['bcs']['B']} C={info['bcs']['C']}")
+    print(f"deck /SHELL={info['nquads']} /SH3N=0  IR={info['ir']}")
     print(f"V0={info['V0_m3']*1e6:.4g} mL")
     if args.check:
         text = starter.read_text()
+        eng = engine.read_text()
         assert text.count("\n") > n, "starter too small"
         assert f"/SHELL/{PART_QUAD}" in text
-        assert f"/SH3N/{PART_TRI}" in text
+        assert not any(ln.startswith("/SH3N") for ln in text.splitlines()), "inflate part must be quad-only"
+        assert not any(ln.startswith("/BCS") for ln in text.splitlines()), "no 3-2-1 pins"
+        assert "/ADYREL" in eng, "engine must use /ADYREL free-free"
+        assert not any(ln.startswith("/DYREL") for ln in eng.splitlines())
         assert "/MAT/LAW42/" in text
         assert "/INTER/TYPE19/" in text
         assert "/PLOAD/" in text
         assert "/MONVOL" not in text
+        assert "/DAMP/" in text
+        assert info["nquads"] == 1554, info["nquads"]
+        assert info["nsh3n"] == 0
+        assert abs(MU - (800.0 * 6894.757) / 1.75) < 1e-6
+        assert RHO == 1130.0
         print("check ok")
     return 0
 

@@ -17,6 +17,8 @@
 0.9 0.0
 /DT/NODA/CST
 0.9 1.0e-6
-/DYREL
-0.0 0.002
+# Free-free / inertial relief analogue (no /BCS pins).
+# /ADYREL = adaptive dynamic relaxation (OpenRadioss engine).
+# Radioss has no PARAM,INREL — that keyword is OptiStruct only.
+/ADYREL
 /END
