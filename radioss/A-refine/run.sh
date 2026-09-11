@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Run the all-quad + /ADYREL A-refine ladder (coarse / ship / fine), then report.
+# Run the all-quad + /ADYREL A-refine ladder, then report.
 # μ and ρ are never retuned. Ishell=1. Same PLOAD unless a labeled Kareem fork.
+#
+#   bash radioss/A-refine/run.sh              # coarse / ship / fine
+#   bash radioss/A-refine/run.sh --finer-only # nested 1-to-4 of fine (does not wipe lower tapes)
 set -euo pipefail
 DECK_ROOT="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DECK_ROOT/../.." && pwd)"
@@ -12,9 +15,17 @@ fi
 source "$RADIOSS_ROOT/env.sh"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 
+FINER_ONLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --finer-only) FINER_ONLY=1 ;;
+  esac
+done
+
 run_one() {
   local dens="$1"
   local timeout_s="${2:-180}"
+  local extra_post="${3:-}"
   local deck="$DECK_ROOT/$dens"
   local run="${RUN_DIR:-$deck/run}"
   mkdir -p "$run"
@@ -34,25 +45,34 @@ run_one() {
     echo "engine exit $eng_ec (post will use any ANIM written)" | tee -a engine.log
   fi
   echo "=== $dens post ==="
+  # shellcheck disable=SC2086
   python3 "$ROOT/tools/radioss_post.py" --run-dir "$run" --deck-dir "$deck" \
-    --label "# A-refine ${dens} — RUN"
+    --label "# A-refine ${dens} — RUN" ${extra_post}
   echo "done $dens. artifacts in $deck/artifacts"
 }
 
-python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT"
-python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
-  --mesh "$DECK_ROOT/meshes/A-coarse.json" --out-dir "$DECK_ROOT/coarse" \
-  --note "A-refine coarse; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
-python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
-  --mesh "$DECK_ROOT/meshes/A-ship.json" --out-dir "$DECK_ROOT/ship" \
-  --note "A-refine ship N=1554; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
-python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
-  --mesh "$DECK_ROOT/meshes/A-fine.json" --out-dir "$DECK_ROOT/fine" \
-  --note "A-refine fine 1-to-4 nested; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
+if [[ "$FINER_ONLY" -eq 1 ]]; then
+  python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT" --finer-only
+  python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
+    --mesh "$DECK_ROOT/meshes/A-finer.json" --out-dir "$DECK_ROOT/finer" \
+    --note "A-refine finer 1-to-4 of fine; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
+  run_one finer "${FINER_TIMEOUT:-900}" "--metrics-only"
+else
+  python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT"
+  python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
+    --mesh "$DECK_ROOT/meshes/A-coarse.json" --out-dir "$DECK_ROOT/coarse" \
+    --note "A-refine coarse; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
+  python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
+    --mesh "$DECK_ROOT/meshes/A-ship.json" --out-dir "$DECK_ROOT/ship" \
+    --note "A-refine ship N=1554; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
+  python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
+    --mesh "$DECK_ROOT/meshes/A-fine.json" --out-dir "$DECK_ROOT/fine" \
+    --note "A-refine fine 1-to-4 nested; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
 
-run_one coarse 180
-run_one ship 180
-run_one fine "${FINE_TIMEOUT:-600}"
+  run_one coarse 180
+  run_one ship 180
+  run_one fine "${FINE_TIMEOUT:-600}"
+fi
 
 python3 "$ROOT/tools/refine_report.py" --root "$DECK_ROOT"
 echo "A-refine ladder done."

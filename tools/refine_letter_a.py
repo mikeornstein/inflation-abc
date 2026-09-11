@@ -6,6 +6,7 @@ Does not overwrite meshes/A.json. Does not retune μ/ρ.
 Coarse = Gmsh DelQuad remesh of the ship midplane outline + prism walls.
 Ship  = locked bake meshes/A.json (N=1554).
 Fine  = nested 1-to-4 of the closed all-quad ship shell (2× h; N×4 on a surface).
+Finer = nested 1-to-4 of fine (N=24864). Study meshes may exceed web bake MAX_VERTS.
 
 Locked physics (same as A-inflate): LAW42 μ1=MU α1=2, ρ=1130, H0,
 Gapmin=CONTACT_KISS, /SHELL quads only, Ishell=1, free-free /ADYREL.
@@ -311,7 +312,7 @@ def extrude_film(pos0, mid_quads, *, nz: int, depth: float = DEPTH):
     return new_pos, new_quads, V, gates
 
 
-def subdivide_closed_quads(pos: np.ndarray, quads):
+def subdivide_closed_quads(pos: np.ndarray, quads, *, check_size: bool = True):
     """Linear 1-to-4 on a closed all-quad shell. Nested h-refinement; winding kept."""
     pos = np.asarray(pos, dtype=float)
     edge_node = {}
@@ -340,7 +341,9 @@ def subdivide_closed_quads(pos: np.ndarray, quads):
         )
     new_pos = np.asarray(new_pos, dtype=float)
     n = len(new_pos)
-    gates = MeshQuality.gate_closed_quad_shell(n, new_quads, want_euler=0)
+    gates = MeshQuality.gate_closed_quad_shell(
+        n, new_quads, want_euler=0, check_size=check_size
+    )
     V = _vol(new_pos, new_quads)
     if V < 0:
         new_quads = _flip_quads(new_quads)
@@ -348,7 +351,7 @@ def subdivide_closed_quads(pos: np.ndarray, quads):
     return new_pos, new_quads, V, gates
 
 
-def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict):
+def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: bool = True):
     pos0 = [float(v) for v in np.asarray(pos, dtype=float).ravel()]
     quads = [[int(i) for i in q] for q in quads]
     n = len(pos0) // 3
@@ -358,7 +361,9 @@ def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict):
         quads = [[q[0], q[3], q[2], q[1]] for q in quads]
         split = BakeJSON.split_tris(quads)
         vol = -vol
-    gates = MeshQuality.gate_closed_quad_shell(n, quads, want_euler=0)
+    gates = MeshQuality.gate_closed_quad_shell(
+        n, quads, want_euler=0, check_size=check_size
+    )
     payload = {
         "pos0": pos0,
         "quads": quads,
@@ -442,42 +447,87 @@ def build_fine(repo: Path):
     return epos, equads, eV, egates, meta
 
 
-def generate(repo: Path, out_dir: Path) -> dict:
+def load_closed_bake(path: Path):
+    data = json.loads(path.read_text())
+    pos = np.asarray(data["pos0"], dtype=float).reshape(-1, 3)
+    quads = [tuple(int(i) for i in q) for q in data["quads"]]
+    V = float((data.get("meta") or {}).get("volume_m3") or _vol(pos, quads))
+    return pos, quads, V, data.get("meta") or {}
+
+
+def build_finer_from_fine(pos: np.ndarray, quads, V0: float):
+    """Nested 1-to-4 of the fine all-quad shell (N×4 vs fine; 16× ship quads)."""
+    epos, equads, eV, egates = subdivide_closed_quads(pos, quads, check_size=False)
+    meta = {
+        "plan": "linear 1-to-4 of closed all-quad fine shell (nested 2× h of fine; N=4×fine)",
+        "role": "finer",
+        "parentN": int(len(pos)),
+        "parentV0_m3": float(V0),
+        "note": "all-quad /SHELL study mesh; exceeds web bake MAX_VERTS; does not replace ship meshes/A.json",
+    }
+    return epos, equads, eV, egates, meta
+
+
+def generate(repo: Path, out_dir: Path, *, finer_only: bool = False, include_finer: bool = False) -> dict:
     mesh_dir = out_dir / "meshes"
     mesh_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = out_dir / "mesh-summary.json"
+    summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
 
-    cpos, cquads, cV, _cg, cmeta = build_coarse(repo)
-    cmeta_out = dump_bake(mesh_dir / "A-coarse.json", cpos, cquads, meta=cmeta)
+    if not finer_only:
+        cpos, cquads, cV, _cg, cmeta = build_coarse(repo)
+        cmeta_out = dump_bake(mesh_dir / "A-coarse.json", cpos, cquads, meta=cmeta)
 
-    pos, quads, sV, _sg, smesh = ship_closed(repo)
-    smeta = {
-        "plan": "ship meshes/A.json (quadify orphan caps; midplane not remeshed)",
-        "role": "ship",
-        "source": "meshes/A.json",
-        "nQuads_src": len(smesh["quads"]),
-        "nOrphanCapTris": len(smesh["orphans"]),
-        "note": "locked Design-PASS bake; A-LOCK.md — do not overwrite meshes/A.json",
-    }
-    smeta_out = dump_bake(mesh_dir / "A-ship.json", pos, quads, meta=smeta)
+        pos, quads, sV, _sg, smesh = ship_closed(repo)
+        smeta = {
+            "plan": "ship meshes/A.json (quadify orphan caps; midplane not remeshed)",
+            "role": "ship",
+            "source": "meshes/A.json",
+            "nQuads_src": len(smesh["quads"]),
+            "nOrphanCapTris": len(smesh["orphans"]),
+            "note": "locked Design-PASS bake; A-LOCK.md — do not overwrite meshes/A.json",
+        }
+        smeta_out = dump_bake(mesh_dir / "A-ship.json", pos, quads, meta=smeta)
 
-    fpos, fquads, fV, _fg, fmeta = build_fine(repo)
-    fmeta_out = dump_bake(mesh_dir / "A-fine.json", fpos, fquads, meta=fmeta)
+        fpos, fquads, fV, _fg, fmeta = build_fine(repo)
+        fmeta_out = dump_bake(mesh_dir / "A-fine.json", fpos, fquads, meta=fmeta)
 
-    summary = {
-        "coarse": {**cmeta_out, "V0_mL": cV * 1e6},
-        "ship": {**smeta_out, "V0_mL": sV * 1e6},
-        "fine": {**fmeta_out, "V0_mL": fV * 1e6},
-        "law": "LAW42 μ1=MU α1=2 ρ=1130 H0 Gapmin=CONTACT_KISS Ishell=1 /ADYREL — not retuned",
-        "metrics": "Chiron/Themis 2026-09-11: at first λ_max≥2 report p, λ_max, V, Ψ; "
+        summary.update({
+            "coarse": {**cmeta_out, "V0_mL": cV * 1e6},
+            "ship": {**smeta_out, "V0_mL": sV * 1e6},
+            "fine": {**fmeta_out, "V0_mL": fV * 1e6},
+        })
+
+    if include_finer or finer_only:
+        fine_path = mesh_dir / "A-fine.json"
+        if not fine_path.exists():
+            raise SystemExit("A-fine.json missing — run without --finer-only first")
+        fpos, fquads, fV, _fmeta = load_closed_bake(fine_path)
+        xpos, xquads, xV, _xg, xmeta = build_finer_from_fine(fpos, fquads, fV)
+        xmeta_out = dump_bake(
+            mesh_dir / "A-finer.json", xpos, xquads, meta=xmeta, check_size=False
+        )
+        summary["finer"] = {**xmeta_out, "V0_mL": xV * 1e6}
+
+    summary["law"] = (
+        "LAW42 μ1=MU α1=2 ρ=1130 H0 Gapmin=CONTACT_KISS Ishell=1 /ADYREL — not retuned"
+    )
+    summary["metrics"] = (
+        "Chiron/Themis 2026-09-11: at first λ_max≥2 report p, λ_max, V, Ψ; "
         "Δp≤5% ΔV≤5% Δλ_max≤2% on successive ~2× N; λ_max in [2.0, 2.35]; Ψ≥0; "
-        "contact report-only; dynamic until QS-ish; converged dynamic ≠ ABC apples",
-    }
-    (out_dir / "mesh-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print("coarse N={N} quads={nQuads} V0={V0_mL:.4g} mL".format(**summary["coarse"]))
-    print("ship   N={N} quads={nQuads} V0={V0_mL:.4g} mL".format(**summary["ship"]))
-    print("fine   N={N} quads={nQuads} V0={V0_mL:.4g} mL".format(**summary["fine"]))
-    if not (summary["coarse"]["N"] < summary["ship"]["N"] < summary["fine"]["N"]):
+        "contact report-only; dynamic until QS-ish; Quality PASS desk; "
+        "converged dynamic ≠ ABC apples"
+    )
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+    for key in ("coarse", "ship", "fine", "finer"):
+        if key in summary and isinstance(summary[key], dict) and "N" in summary[key]:
+            print("{k:6s} N={N} quads={nQuads} V0={V0_mL:.4g} mL".format(k=key, **summary[key]))
+    ns = [summary[k]["N"] for k in ("coarse", "ship", "fine") if k in summary]
+    if len(ns) == 3 and not (ns[0] < ns[1] < ns[2]):
         raise SystemExit("densities are not coarse < ship < fine")
+    if "finer" in summary and "fine" in summary:
+        if not (summary["fine"]["N"] < summary["finer"]["N"]):
+            raise SystemExit("finer is not denser than fine")
     return summary
 
 
@@ -485,8 +535,23 @@ def main(argv=None) -> int:
     repo = _TOOLS.parent
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out-dir", type=Path, default=repo / "radioss" / "A-refine")
+    ap.add_argument(
+        "--finer-only",
+        action="store_true",
+        help="1-to-4 of existing A-fine.json only; do not remesh coarse/ship/fine",
+    )
+    ap.add_argument(
+        "--with-finer",
+        action="store_true",
+        help="also write nested finer (N=4×fine) after the coarse/ship/fine ladder",
+    )
     args = ap.parse_args(argv)
-    generate(repo, args.out_dir)
+    generate(
+        repo,
+        args.out_dir,
+        finer_only=args.finer_only,
+        include_finer=args.with_finer or args.finer_only,
+    )
     return 0
 
 

@@ -90,12 +90,20 @@ class MeshQuality:
         return len({find(i) for i in used})
 
     @staticmethod
-    def gate_closed_quad_shell(n: int, quads: list, tris: list | None = None, *, want_euler=None) -> dict:
+    def gate_closed_quad_shell(
+        n: int,
+        quads: list,
+        tris: list | None = None,
+        *,
+        want_euler=None,
+        check_size: bool = True,
+    ) -> dict:
         g = MeshQuality.counts(n, quads, tris)
-        if n > MeshQuality.MAX_VERTS:
-            raise ValueError(f"N={n} exceeds cap {MeshQuality.MAX_VERTS}")
-        if g["nQuads"] > MeshQuality.MAX_QUADS:
-            raise ValueError(f"quads={g['nQuads']} exceeds cap {MeshQuality.MAX_QUADS}")
+        if check_size:
+            if n > MeshQuality.MAX_VERTS:
+                raise ValueError(f"N={n} exceeds cap {MeshQuality.MAX_VERTS}")
+            if g["nQuads"] > MeshQuality.MAX_QUADS:
+                raise ValueError(f"quads={g['nQuads']} exceeds cap {MeshQuality.MAX_QUADS}")
         if g["freeEdges"] != 0:
             raise ValueError(f"open shell: freeEdges={g['freeEdges']}")
         if g["nonManifold"] != 0:

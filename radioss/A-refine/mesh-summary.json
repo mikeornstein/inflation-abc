@@ -86,5 +86,31 @@
     "V0_mL": 353.98478196819417
   },
   "law": "LAW42 \u03bc1=MU \u03b11=2 \u03c1=1130 H0 Gapmin=CONTACT_KISS Ishell=1 /ADYREL \u2014 not retuned",
-  "metrics": "Chiron/Themis 2026-09-11: at first \u03bb_max\u22652 report p, \u03bb_max, V, \u03a8; \u0394p\u22645% \u0394V\u22645% \u0394\u03bb_max\u22642% on successive ~2\u00d7 N; \u03bb_max in [2.0, 2.35]; \u03a8\u22650; contact report-only; dynamic until QS-ish; converged dynamic \u2260 ABC apples"
+  "metrics": "Chiron/Themis 2026-09-11: at first \u03bb_max\u22652 report p, \u03bb_max, V, \u03a8; \u0394p\u22645% \u0394V\u22645% \u0394\u03bb_max\u22642% on successive ~2\u00d7 N; \u03bb_max in [2.0, 2.35]; \u03a8\u22650; contact report-only; dynamic until QS-ish; Quality PASS desk; converged dynamic \u2260 ABC apples",
+  "finer": {
+    "letter": "A",
+    "DEPTH": 0.05,
+    "N": 24864,
+    "nQuads": 24864,
+    "nTris": 49728,
+    "nOrphanCapTris": 0,
+    "nMidTris": 0,
+    "volume_m3": 0.00035398478196818866,
+    "gates": {
+      "N": 24864,
+      "nQuads": 24864,
+      "nTris": 0,
+      "nEdges": 49728,
+      "freeEdges": 0,
+      "nonManifold": 0,
+      "euler": 0,
+      "components": 1
+    },
+    "plan": "linear 1-to-4 of closed all-quad fine shell (nested 2\u00d7 h of fine; N=4\u00d7fine)",
+    "role": "finer",
+    "parentN": 6216,
+    "parentV0_m3": 0.00035398478196820216,
+    "note": "all-quad /SHELL study mesh; exceeds web bake MAX_VERTS; does not replace ship meshes/A.json",
+    "V0_mL": 353.9847819681893
+  }
 }

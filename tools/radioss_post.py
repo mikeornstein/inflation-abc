@@ -609,6 +609,11 @@ def main(argv=None) -> int:
     ap.add_argument("--deck-dir", type=Path, default=repo / "radioss" / "A-inflate")
     ap.add_argument("--mesh", type=Path, default=repo / "meshes" / "A.json")
     ap.add_argument("--label", type=str, default=None)
+    ap.add_argument(
+        "--metrics-only",
+        action="store_true",
+        help="skip O(n²) contact_gap, per-frame PNG, and GIF (large-N refine). Still writes warn.json.",
+    )
     args = ap.parse_args(argv)
 
     meta = load_deck_meta(args.deck_dir)
@@ -652,13 +657,18 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
     print(f"ANIM cells: {len(quads)} quads, {len(orphans)} tris")
-    ring2 = adjacency(len(X), quads, orphans)
+    metrics_only = bool(args.metrics_only) or len(quads) > 8000
+    ring2 = None if metrics_only else adjacency(len(X), quads, orphans)
+    if metrics_only:
+        print("metrics-only: skip contact_gap + per-frame PNG/GIF (Chiron/Themis p/λ/V/Ψ still written)")
 
     rows = []
     warn_row = None
     warn_field = None
     last_img = None
     last_field = None
+    snap_x = None
+    snap_lams = None
     for fi, vtk in enumerate(vtks):
         pts, cells, time = parse_vtk(vtk)
         x = np.asarray(pts, dtype=np.float64)
@@ -668,9 +678,13 @@ def main(argv=None) -> int:
             time = max(0, idx - 1) * anim_dt
         lam_max, Psi, nneg = metrics_frame(X, x, quads, orphans)
         V = enclosed_volume(x, cover)
-        gap_u, min_s, punch = contact_gap(x, X, cover, ring2)
-        if V < 0:
-            punch = True
+        if metrics_only:
+            gap_u, min_s = float("nan"), float("nan")
+            punch = bool(V < 0)
+        else:
+            gap_u, min_s, punch = contact_gap(x, X, cover, ring2)
+            if V < 0:
+                punch = True
         p = pressure_at(time, p_max=p_max, t_ramp=t_ramp)
         row = {
             "frame": fi,
@@ -690,27 +704,38 @@ def main(argv=None) -> int:
             "n_tris": len(orphans),
         }
         rows.append(row)
+        gap_txt = "n/a" if metrics_only else f"{row['gap_mm']:.3g} mm"
         print(
             f"frame {fi:03d} t={time:.4g}s  p={p:.4g} Pa  λ_max={lam_max:.4f}  "
-            f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={row['gap_mm']:.3g} mm  punch={punch}"
+            f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={gap_txt}  punch={punch}"
         )
-        lams = quad_lams(X, x, quads)
         field = lambda_field_stats(X, x, quads)
         last_field = field
-        hud = [
-            f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
-            f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",
-            f"Ψ = {Psi:.4g} J   quads={len(quads)} SH3N={len(orphans)}  /ADYREL",
-        ]
         is_warn = lam_max >= WARN_LAM and warn_row is None
-        img = render_frame(x, quads, lams, hud, warn=is_warn or (warn_row is not None and fi == warn_row["frame"]))
-        png = frames_dir / f"frame_{fi:04d}.png"
-        img.save(png)
-        last_img = png
+        if not metrics_only:
+            lams = quad_lams(X, x, quads)
+            hud = [
+                f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
+                f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",
+                f"Ψ = {Psi:.4g} J   quads={len(quads)} SH3N={len(orphans)}  /ADYREL",
+            ]
+            img = render_frame(
+                x, quads, lams, hud,
+                warn=is_warn or (warn_row is not None and fi == warn_row["frame"]),
+            )
+            png = frames_dir / f"frame_{fi:04d}.png"
+            img.save(png)
+            last_img = png
+            if is_warn:
+                img.save(art / "warn-lambda2.png")
+        elif is_warn or warn_row is None:
+            snap_x = x
         if is_warn:
             warn_row = row
             warn_field = field
-            img.save(art / "warn-lambda2.png")
+            if metrics_only:
+                snap_lams = quad_lams(X, x, quads)
+                snap_x = x
 
     with (art / "metrics.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -732,6 +757,7 @@ def main(argv=None) -> int:
         "MU": MU,
         "RHO": RHO,
         "label": "dynamic PLOAD + /ADYREL (not Chiron QS; converged dynamic ≠ ABC apples)",
+        "metrics_only": metrics_only,
     }
     src = warn_row or (rows[-1] if rows else None)
     if src:
@@ -755,19 +781,34 @@ def main(argv=None) -> int:
     if field:
         (art / "lambda_field.json").write_text(json.dumps(field, indent=2) + "\n")
 
+    if metrics_only and snap_x is not None:
+        src_row = warn_row or (rows[-1] if rows else None)
+        if src_row is not None:
+            lams = snap_lams if snap_lams is not None else quad_lams(X, snap_x, quads)
+            hud = [
+                f"OpenRadioss A  frame {src_row['frame']}  t={src_row['t']*1e3:.3g} ms",
+                f"p = {src_row['p_Pa']:.0f} Pa   λ_max = {src_row['lam_max']:.3f}   V = {src_row['V_mL']:.1f} mL",
+                f"Ψ = {src_row['Psi_J']:.4g} J   quads={len(quads)}  metrics-only /ADYREL",
+            ]
+            img = render_frame(snap_x, quads, lams, hud, warn=warn_row is not None)
+            png = art / ("warn-lambda2.png" if warn_row is not None else "last-frame.png")
+            img.save(png)
+            last_img = png
+
     if warn_row is None and last_img:
         dest = art / "last-frame.png"
         dest.write_bytes(last_img.read_bytes())
 
     gif = art / "A-inflate.gif"
     mp4 = art / "A-inflate.mp4"
-    gif_end = len(rows)
-    for r in rows:
-        if r["lam_max"] > 8.0 or r["V_mL"] > 20.0 * max(rows[0]["V_mL"], 1.0):
-            gif_end = r["frame"]
-            break
-    gif_end = max(gif_end, (warn_row["frame"] + 1) if warn_row else 1)
-    ffmpeg_encode(frames_dir, gif, mp4, nframes=gif_end)
+    if not metrics_only:
+        gif_end = len(rows)
+        for r in rows:
+            if r["lam_max"] > 8.0 or r["V_mL"] > 20.0 * max(rows[0]["V_mL"], 1.0):
+                gif_end = r["frame"]
+                break
+        gif_end = max(gif_end, (warn_row["frame"] + 1) if warn_row else 1)
+        ffmpeg_encode(frames_dir, gif, mp4, nframes=gif_end)
 
     blockers = scan_logs(args.run_dir)
     extra = []
@@ -778,8 +819,13 @@ def main(argv=None) -> int:
     extra.append("Working PROP: Belytschko Ishell=1, Ismstr=10, N=1. μ and ρ unchanged.")
     extra.append(
         "Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. "
-        "Converged dynamic ≠ ABC apples claim vs Chiron QS."
+        "Quality PASS desk; converged dynamic ≠ ABC apples claim vs Chiron QS."
     )
+    if metrics_only:
+        extra.append(
+            "Post is **metrics-only**: contact gap skipped (report-only anyway); "
+            "no per-frame PNG/GIF. p, λ_max, V, Ψ at first λ≥2 are still in warn.json."
+        )
     if orphans:
         extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
     if not gif.exists() and not mp4.exists():

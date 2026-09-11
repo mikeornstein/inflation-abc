@@ -22,7 +22,7 @@ DLAM_MAX = 0.02
 MU = (800.0 * 6894.757) / 1.75
 RHO = 1130.0
 
-DENSITIES = ("coarse", "ship", "fine")
+DENSITIES = ("coarse", "ship", "fine", "finer")
 
 
 def rel(a, b) -> float:
@@ -61,13 +61,42 @@ def pair_verdict(coarser: dict, finer: dict, name_c: str, name_f: str) -> dict:
     return gates
 
 
+def fork_lines(rows: list[dict]) -> list[str]:
+    cfl = [r for r in rows if r.get("cfl_before_lambda2")]
+    ams = [r for r in rows if r.get("ams")]
+    pending = [r for r in rows if not r.get("reached_lambda2") and not r.get("cfl_before_lambda2")]
+    if cfl:
+        names = ", ".join(r["density"] for r in cfl)
+        return [
+            f"CFL `/DT/NODA/STOP` before λ≥2 on: **{names}**. "
+            "Kareem fork: `/AMS` or slower PLOAD (not NODA/CST). Ishell=1; μ/ρ locked.",
+        ]
+    if pending:
+        names = ", ".join(r["density"] for r in pending)
+        return [
+            f"No Kareem fork armed. Pending λ≥2 tape: **{names}**. "
+            "Hang guard remains STOP (not NODA/CST).",
+        ]
+    if ams:
+        names = ", ".join(r["density"] for r in ams)
+        return [
+            f"`/AMS` armed on: **{names}** (Kareem CFL fork). Hang guard remains STOP (not NODA/CST).",
+        ]
+    return [
+        "No Kareem fork on this tape: every density reached λ≥2 **before** `/DT/NODA/STOP`. "
+        "`/AMS` / slower PLOAD not armed. Hang guard remains STOP (not NODA/CST).",
+    ]
+
+
 def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str) -> None:
     lines = [
         "# A-refine — mesh convergence (Chiron/Themis lock)",
         "",
         "Quad-only `/SHELL` + free-free `/ADYREL` OpenRadioss A inflate. "
         "**Not** the old tri/`SH3N` + 3-2-1 `/BCS` deck. "
-        "μ and ρ are locked; load law is **fixed** across the ladder.",
+        "μ and ρ are locked; load law is **fixed** across the ladder. "
+        "This deck is the **Quality PASS desk** (p@λ≥2 still **dynamic** — "
+        "NOT-YET apples vs ABC/Chiron QS).",
         "",
         "## Locked law (never retuned)",
         "",
@@ -118,11 +147,14 @@ def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str
         psi_ok = r["Psi_J"] >= -1e-8
         gap = r.get("gap_mm")
         punch = r.get("punch")
-        try:
-            gap_s = f"gap={float(gap):.3g} mm"
-        except (TypeError, ValueError):
-            gap_s = "gap=n/a"
-        contact = f"{gap_s}; punch={punch} (report-only)"
+        if r.get("metrics_only"):
+            contact = "metrics-only (gap skipped; report-only)"
+        else:
+            try:
+                gap_s = f"gap={float(gap):.3g} mm"
+            except (TypeError, ValueError):
+                gap_s = "gap=n/a"
+            contact = f"{gap_s}; punch={punch} (report-only)"
         lines.append(
             f"| {r['N']} | {r['density']} | {r['t']*1e3:.3g} | {r['p_Pa']:.0f} | "
             f"{r['lam_max']:.4f} | {r['V_mL']:.4g} | {r['Psi_J']:.4g} | "
@@ -174,8 +206,7 @@ def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str
         "",
         "## Forks",
         "",
-        "No Kareem fork on this tape: every density reached λ≥2 **before** `/DT/NODA/STOP`. "
-        "`/AMS` / slower PLOAD not armed. Hang guard remains STOP (not NODA/CST).",
+        *fork_lines(rows),
         "",
         "## Reproduce",
         "",
@@ -183,6 +214,8 @@ def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str
         "bash radioss/install_openradioss.sh",
         "python3 tools/refine_letter_a.py",
         "bash radioss/A-refine/run.sh",
+        "python3 tools/refine_letter_a.py --finer-only",
+        "bash radioss/A-refine/run.sh --finer-only",
         "python3 tools/refine_report.py",
         "```",
         "",
@@ -201,6 +234,8 @@ def main(argv=None) -> int:
     rows = []
     for dens in DENSITIES:
         deck = root / dens
+        if dens == "finer" and not deck.exists() and dens not in summary:
+            continue
         w = load_warn(deck)
         meta = json.loads((deck / "deck-meta.json").read_text()) if (deck / "deck-meta.json").exists() else {}
         plan = (summary.get(dens) or {}).get("plan") or dens
@@ -223,6 +258,7 @@ def main(argv=None) -> int:
                     "gap_mm": w.get("gap_mm"),
                     "punch": w.get("punch"),
                     "ams": w.get("ams"),
+                    "metrics_only": w.get("metrics_only"),
                     "lam_p90": (w.get("lambda_field") or {}).get("lam_p90"),
                     "lam_aw_mean": (w.get("lambda_field") or {}).get("lam_aw_mean"),
                 }
@@ -274,7 +310,7 @@ def main(argv=None) -> int:
         extra = ""
         if last and last.get("dp_ok") and last.get("dv_ok") and not last.get("dlam_ok"):
             extra = (
-                f" Ship→fine Δp={last['dp']*100:.2f}% and ΔV={last['dv']*100:.2f}% are inside the lock, "
+                f" {last['pair']} Δp={last['dp']*100:.2f}% and ΔV={last['dv']*100:.2f}% are inside the lock, "
                 f"but Δλ_max={last['dlam']*100:.2f}% exceeds 2%. λ_max still moving (needs a finer N or a QS-ish tape)."
             )
         verdict = (
