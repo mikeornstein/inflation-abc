@@ -26,6 +26,24 @@ from mesh_to_radioss import ANIM_DT, P_MAX, T_RAMP, RUNNAME, load_mesh, quadify_
 from radioss_law import CONTACT_KISS, H0, MU, RHO, WARN_LAM, law_card_lines
 
 
+def _finite_or_none(v):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
+
+
 def load_deck_meta(deck_dir: Path) -> dict:
     p = deck_dir / "deck-meta.json"
     if not p.exists():
@@ -741,14 +759,16 @@ def main(argv=None) -> int:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
-    (art / "metrics.json").write_text(json.dumps(rows, indent=2))
+    (art / "metrics.json").write_text(json.dumps(_json_safe(rows), indent=2) + "\n")
 
-    cfl_before = warn_row is None and any(
-        "NODA/STOP" in b or "CFL" in b or "time step collapsed" in b for b in scan_logs(args.run_dir)
-    )
+    blockers_early = scan_logs(args.run_dir)
+    stop_fired = any("NODA/STOP" in b or "NODAL TIME STEP LESS" in b for b in blockers_early)
+    cfl_before = warn_row is None and stop_fired
+    cfl_after = warn_row is not None and stop_fired
     warn_payload = {
         "reached_lambda2": warn_row is not None,
-        "cfl_before_lambda2": bool(cfl_before and warn_row is None),
+        "cfl_before_lambda2": bool(cfl_before),
+        "cfl_after_lambda2": bool(cfl_after),
         "dynamic": True,
         "ams": ams,
         "n_quads": len(quads),
@@ -769,7 +789,7 @@ def main(argv=None) -> int:
                 "lam_max": src["lam_max"],
                 "V_mL": src["V_mL"],
                 "Psi_J": src["Psi_J"],
-                "gap_mm": src["gap_mm"],
+                "gap_mm": _finite_or_none(src.get("gap_mm")),
                 "punch": src["punch"],
                 "Psi_neg_elems": src["Psi_neg_elems"],
             }
@@ -777,7 +797,7 @@ def main(argv=None) -> int:
     field = warn_field or last_field
     if field:
         warn_payload["lambda_field"] = field
-    (art / "warn.json").write_text(json.dumps(warn_payload, indent=2) + "\n")
+    (art / "warn.json").write_text(json.dumps(_json_safe(warn_payload), indent=2) + "\n")
     if field:
         (art / "lambda_field.json").write_text(json.dumps(field, indent=2) + "\n")
 
@@ -828,7 +848,7 @@ def main(argv=None) -> int:
         )
     if orphans:
         extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
-    if not gif.exists() and not mp4.exists():
+    if not metrics_only and not gif.exists() and not mp4.exists():
         extra.append("ffmpeg GIF/MP4 encode failed — PNG frames are in artifacts/frames/")
     write_run_md(
         args.deck_dir / "RUN.md",

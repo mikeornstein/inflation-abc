@@ -40,7 +40,7 @@ At **first λ_max ≥ 2** on each mesh N:
 | 936 | coarse | 16 | 26006 | 2.2597 | 888.4 | 7.617 | yes | yes | gap=0.000101 mm; punch=False (report-only) |
 | 1554 | ship | 22 | 35769 | 2.1404 | 901.8 | 9.502 | yes | yes | gap=2.27e-06 mm; punch=False (report-only) |
 | 6216 | fine | 22 | 35762 | 2.2302 | 901.5 | 8.776 | yes | yes | gap=1.81e-06 mm; punch=False (report-only) |
-| 24864 | finer | — | — | — | — | — | — | — | not reached |
+| 24864 | finer | 20 | 32505 | 2.1479 | 778.3 | 5.731 | yes | yes | metrics-only (gap skipped; report-only) |
 
 All values are **dynamic** (explicit `/PLOAD` + `/ADYREL`), not Chiron QS.
 
@@ -51,7 +51,7 @@ All values are **dynamic** (explicit `/PLOAD` + `/ADYREL`), not Chiron QS.
 | 936 | coarse | 1.2897 | 1.4534 |
 | 1554 | ship | 1.3013 | 1.4460 |
 | 6216 | fine | 1.2735 | 1.4102 |
-| 24864 | finer | — | — |
+| 24864 | finer | 1.2162 | 1.3121 |
 
 ## Successive pairs (relative change vs coarser N)
 
@@ -59,17 +59,17 @@ All values are **dynamic** (explicit `/PLOAD` + `/ADYREL`), not Chiron QS.
 |------|-----------|---:|---:|-------:|:------:|:---:|:----:|
 | coarse→ship | 936 → 1554 | 37.54% | 1.51% | 5.28% | yes | yes | **FAIL** |
 | ship→fine | 1554 → 6216 | 0.02% | 0.03% | 4.20% | yes | yes | **FAIL** |
-| fine→finer | 6216 → 24864 | — | — | — | — | — | skipped (finer no λ≥2) |
+| fine→finer | 6216 → 24864 | 9.11% | 13.67% | 3.69% | yes | yes | **FAIL** |
 
 ## Verdict
 
-**not-yet — successive ~2× N did not meet Δp≤5%, ΔV≤5%, Δλ_max≤2% with λ_max in [2.0, 2.35] and Ψ≥0. ship→fine Δp=0.02% and ΔV=0.03% are inside the lock, but Δλ_max=4.20% exceeds 2%. λ_max still moving (needs a finer N or a QS-ish tape).**
+**not-yet — successive ~2× N did not meet Δp≤5%, ΔV≤5%, Δλ_max≤2% with λ_max in [2.0, 2.35] and Ψ≥0. fine→finer Δp=9.11%, ΔV=13.67%, Δλ_max=3.69% (locks 5%/5%/2%).**
 
 Converged dynamic on this explicit tape is **not** an ABC apples-to-apples claim against the JS Chiron QS warn (~54 kPa).
 
 ## Forks
 
-No Kareem fork on this tape: every density reached λ≥2 **before** `/DT/NODA/STOP`. `/AMS` / slower PLOAD not armed. Hang guard remains STOP (not NODA/CST).
+CFL `/DT/NODA/STOP` **after** first λ≥2 on: **finer** (metric frame is valid; no Kareem fork — lock only forks if CFL dies before λ≥2). Hang guard remains STOP (not NODA/CST). Ishell=1; μ/ρ locked.
 
 ## Reproduce
 

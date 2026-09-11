@@ -64,6 +64,7 @@ def pair_verdict(coarser: dict, finer: dict, name_c: str, name_f: str) -> dict:
 def fork_lines(rows: list[dict]) -> list[str]:
     cfl = [r for r in rows if r.get("cfl_before_lambda2")]
     ams = [r for r in rows if r.get("ams")]
+    late = [r for r in rows if r.get("cfl_after_lambda2")]
     pending = [r for r in rows if not r.get("reached_lambda2") and not r.get("cfl_before_lambda2")]
     if cfl:
         names = ", ".join(r["density"] for r in cfl)
@@ -76,6 +77,13 @@ def fork_lines(rows: list[dict]) -> list[str]:
         return [
             f"No Kareem fork armed. Pending λ≥2 tape: **{names}**. "
             "Hang guard remains STOP (not NODA/CST).",
+        ]
+    if late:
+        names = ", ".join(r["density"] for r in late)
+        return [
+            f"CFL `/DT/NODA/STOP` **after** first λ≥2 on: **{names}** "
+            "(metric frame is valid; no Kareem fork — lock only forks if CFL dies before λ≥2). "
+            "Hang guard remains STOP (not NODA/CST). Ishell=1; μ/ρ locked.",
         ]
     if ams:
         names = ", ".join(r["density"] for r in ams)
@@ -259,6 +267,7 @@ def main(argv=None) -> int:
                     "punch": w.get("punch"),
                     "ams": w.get("ams"),
                     "metrics_only": w.get("metrics_only"),
+                    "cfl_after_lambda2": w.get("cfl_after_lambda2"),
                     "lam_p90": (w.get("lambda_field") or {}).get("lam_p90"),
                     "lam_aw_mean": (w.get("lambda_field") or {}).get("lam_aw_mean"),
                 }
@@ -308,11 +317,14 @@ def main(argv=None) -> int:
         )
     else:
         extra = ""
-        if last and last.get("dp_ok") and last.get("dv_ok") and not last.get("dlam_ok"):
+        if last and not last.get("pass"):
             extra = (
-                f" {last['pair']} Δp={last['dp']*100:.2f}% and ΔV={last['dv']*100:.2f}% are inside the lock, "
-                f"but Δλ_max={last['dlam']*100:.2f}% exceeds 2%. λ_max still moving (needs a finer N or a QS-ish tape)."
+                f" {last['pair']} Δp={last['dp']*100:.2f}%, ΔV={last['dv']*100:.2f}%, "
+                f"Δλ_max={last['dlam']*100:.2f}% "
+                f"(locks 5%/5%/2%)."
             )
+            if last.get("dp_ok") and last.get("dv_ok") and not last.get("dlam_ok"):
+                extra += " λ_max still moving (needs a finer N or a QS-ish tape)."
         verdict = (
             "not-yet — successive ~2× N did not meet Δp≤5%, ΔV≤5%, Δλ_max≤2% "
             "with λ_max in [2.0, 2.35] and Ψ≥0."
