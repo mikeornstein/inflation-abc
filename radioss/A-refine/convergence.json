@@ -1,0 +1,87 @@
+{
+  "rows": [
+    {
+      "density": "coarse",
+      "N": 936,
+      "n_quads": 936,
+      "plan": "Gmsh DelQuad remesh of ship A outline + prism walls",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0160036,
+      "p_Pa": 26005.85,
+      "lam_max": 2.2596796643486607,
+      "V_mL": 888.422802197154,
+      "Psi_J": 7.616768651842335,
+      "gap_mm": 0.0001007360514751826,
+      "punch": false,
+      "ams": false,
+      "lam_p90": 1.4533808942053918,
+      "lam_aw_mean": 1.2897497322438234
+    },
+    {
+      "density": "ship",
+      "N": 1554,
+      "n_quads": 1554,
+      "plan": "ship meshes/A.json (quadify orphan caps; midplane not remeshed)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0220118,
+      "p_Pa": 35769.174999999996,
+      "lam_max": 2.1403635915940185,
+      "V_mL": 901.8243076553854,
+      "Psi_J": 9.501507844134085,
+      "gap_mm": 2.268577831885306e-06,
+      "punch": false,
+      "ams": false,
+      "lam_p90": 1.4459938922874163,
+      "lam_aw_mean": 1.301268469489317
+    },
+    {
+      "density": "fine",
+      "N": 6216,
+      "n_quads": 6216,
+      "plan": "linear 1-to-4 of closed all-quad ship shell (nested 2\u00d7 h; N\u00d74 on a surface)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0220071,
+      "p_Pa": 35761.5375,
+      "lam_max": 2.230237105872328,
+      "V_mL": 901.546876864852,
+      "Psi_J": 8.776310381922896,
+      "gap_mm": 1.8070375842231476e-06,
+      "punch": false,
+      "ams": false,
+      "lam_p90": 1.4102454061516416,
+      "lam_aw_mean": 1.273482967004559
+    }
+  ],
+  "pairs": [
+    {
+      "dp": 0.37542802869354386,
+      "dv": 0.01508460321491989,
+      "dlam": 0.05280220671855028,
+      "dp_ok": false,
+      "dv_ok": true,
+      "dlam_ok": false,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": false,
+      "pair": "coarse\u2192ship",
+      "Ns": "936 \u2192 1554"
+    },
+    {
+      "dp": 0.00021352183828665577,
+      "dv": 0.0003076328595030055,
+      "dlam": 0.041989835106182594,
+      "dp_ok": true,
+      "dv_ok": true,
+      "dlam_ok": false,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": false,
+      "pair": "ship\u2192fine",
+      "Ns": "1554 \u2192 6216"
+    }
+  ],
+  "verdict": "not-yet \u2014 successive ~2\u00d7 N did not meet \u0394p\u22645%, \u0394V\u22645%, \u0394\u03bb_max\u22642% with \u03bb_max in [2.0, 2.35] and \u03a8\u22650. Ship\u2192fine \u0394p=0.02% and \u0394V=0.03% are inside the lock, but \u0394\u03bb_max=4.20% exceeds 2%. \u03bb_max still moving (needs a finer N or a QS-ish tape)."
+}

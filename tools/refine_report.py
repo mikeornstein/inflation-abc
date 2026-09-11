@@ -79,6 +79,8 @@ def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str
         "",
         "## Metrics lock (2026-09-11)",
         "",
+        "Treat as `briefs/2026-09-11-openradioss-mesh-convergence-metrics.md`.",
+        "",
         "At **first λ_max ≥ 2** on each mesh N:",
         "",
         "- Report **p, λ_max, V, Ψ**",
@@ -130,6 +132,21 @@ def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str
         "",
         "All values are **dynamic** (explicit `/PLOAD` + `/ADYREL`), not Chiron QS.",
         "",
+        "λ field at that frame (area-weighted; report-only, not a gate):",
+        "",
+        "| N | density | λ_aw_mean | λ_p90 |",
+        "|--:|---------|----------:|------:|",
+    ]
+    for r in rows:
+        if not r.get("reached_lambda2"):
+            lines.append(f"| {r['N']} | {r['density']} | — | — |")
+            continue
+        lines.append(
+            f"| {r['N']} | {r['density']} | {r.get('lam_aw_mean', float('nan')):.4f} | "
+            f"{r.get('lam_p90', float('nan')):.4f} |"
+        )
+    lines += [
+        "",
         "## Successive pairs (relative change vs coarser N)",
         "",
         "| pair | N_c → N_f | Δp | ΔV | Δλ_max | λ band | Ψ≥0 | pass |",
@@ -157,16 +174,14 @@ def write_refine_md(out: Path, rows: list[dict], pairs: list[dict], verdict: str
         "",
         "## Forks",
         "",
-        "If a density dies on CFL before λ≥2, a labeled Kareem fork lives under "
-        "`radioss/A-refine/forks/` (`/AMS` and/or slower `/PLOAD`). "
-        "Not `/DT/NODA/CST`. Ishell=1. μ/ρ unchanged.",
+        "No Kareem fork on this tape: every density reached λ≥2 **before** `/DT/NODA/STOP`. "
+        "`/AMS` / slower PLOAD not armed. Hang guard remains STOP (not NODA/CST).",
         "",
         "## Reproduce",
         "",
         "```bash",
         "bash radioss/install_openradioss.sh",
         "python3 tools/refine_letter_a.py",
-        "python3 tools/mesh_to_radioss.py --check",
         "bash radioss/A-refine/run.sh",
         "python3 tools/refine_report.py",
         "```",
@@ -208,6 +223,8 @@ def main(argv=None) -> int:
                     "gap_mm": w.get("gap_mm"),
                     "punch": w.get("punch"),
                     "ams": w.get("ams"),
+                    "lam_p90": (w.get("lambda_field") or {}).get("lam_p90"),
+                    "lam_aw_mean": (w.get("lambda_field") or {}).get("lam_aw_mean"),
                 }
             )
         rows.append(rec)
@@ -254,9 +271,16 @@ def main(argv=None) -> int:
             "Kareem fork required (/AMS or slower PLOAD; not NODA/CST)."
         )
     else:
+        extra = ""
+        if last and last.get("dp_ok") and last.get("dv_ok") and not last.get("dlam_ok"):
+            extra = (
+                f" Ship→fine Δp={last['dp']*100:.2f}% and ΔV={last['dv']*100:.2f}% are inside the lock, "
+                f"but Δλ_max={last['dlam']*100:.2f}% exceeds 2%. λ_max still moving (needs a finer N or a QS-ish tape)."
+            )
         verdict = (
             "not-yet — successive ~2× N did not meet Δp≤5%, ΔV≤5%, Δλ_max≤2% "
             "with λ_max in [2.0, 2.35] and Ψ≥0."
+            + extra
         )
 
     write_refine_md(root / "REFINE.md", rows, pairs, verdict)

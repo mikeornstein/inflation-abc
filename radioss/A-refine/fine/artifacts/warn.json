@@ -1,0 +1,31 @@
+{
+  "reached_lambda2": true,
+  "cfl_before_lambda2": false,
+  "dynamic": true,
+  "ams": false,
+  "n_quads": 6216,
+  "n_tris": 0,
+  "Ishell": 1,
+  "MU": 3151888.9142857143,
+  "RHO": 1130.0,
+  "label": "dynamic PLOAD + /ADYREL (not Chiron QS; converged dynamic \u2260 ABC apples)",
+  "frame": 11,
+  "t": 0.0220071,
+  "p_Pa": 35761.5375,
+  "lam_max": 2.230237105872328,
+  "V_mL": 901.546876864852,
+  "Psi_J": 8.776310381922896,
+  "gap_mm": 1.8070375842231476e-06,
+  "punch": false,
+  "Psi_neg_elems": 0,
+  "lambda_field": {
+    "lam_max": 2.230237105872328,
+    "lam_min": 1.0867167177344643,
+    "lam_mean": 1.2760763402388944,
+    "lam_aw_mean": 1.273482967004559,
+    "lam_p50": 1.2493164777385428,
+    "lam_p90": 1.4102454061516416,
+    "lam_p99": 1.7138453705971344,
+    "n_quads": 6216
+  }
+}

@@ -4,6 +4,8 @@ radioss/A-inflate/run/
 radioss/A-inflate/artifacts/frames/
 radioss/A-refine/**/run/
 radioss/A-refine/**/artifacts/frames/
+radioss/A-refine/**/artifacts/A-inflate.gif
+radioss/A-refine/**/artifacts/A-inflate.mp4
 __pycache__/
 *.pyc
 .venv/
