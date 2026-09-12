@@ -1,0 +1,423 @@
+{
+  "rows": [
+    {
+      "density": "ship",
+      "N": 988,
+      "n_quads": 986,
+      "plan": "ship meshes/C.json \u2014 paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner); flipped 206 inward /SHELL so +PLOAD is out of V",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.018007,
+      "p_Pa": 29261.374999999996,
+      "lam_max": 2.0872482087189597,
+      "V_mL": 1146.6033520767046,
+      "Psi_J": 12.664034306577966,
+      "gap_mm": 2.4791804975978568e-05,
+      "punch": false,
+      "ams": false,
+      "metrics_only": false,
+      "cfl_after_lambda2": true,
+      "lam_p90": 1.581424426396345,
+      "lam_aw_mean": 1.3541543839926091
+    },
+    {
+      "density": "fine",
+      "N": 3946,
+      "n_quads": 3944,
+      "plan": "linear 1-to-4 of closed all-quad ship shell (nested 2\u00d7 h; N\u00d74 on a surface)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0180146,
+      "p_Pa": 29273.725,
+      "lam_max": 2.1178333301633305,
+      "V_mL": 1151.3362446886306,
+      "Psi_J": 12.318501965133075,
+      "gap_mm": null,
+      "punch": false,
+      "ams": false,
+      "metrics_only": true,
+      "cfl_after_lambda2": true,
+      "lam_p90": 1.5659441717856375,
+      "lam_aw_mean": 1.3359835168894292
+    },
+    {
+      "density": "finer",
+      "N": 15778,
+      "n_quads": 15776,
+      "plan": "linear 1-to-4 of closed all-quad fine shell (nested 2\u00d7 h of fine; N=4\u00d7fine)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0180013,
+      "p_Pa": 29252.1125,
+      "lam_max": 2.2654339758310766,
+      "V_mL": 1152.7101062143845,
+      "Psi_J": 12.281664626148997,
+      "gap_mm": null,
+      "punch": false,
+      "ams": false,
+      "metrics_only": true,
+      "cfl_after_lambda2": true,
+      "lam_p90": 1.5532009309589996,
+      "lam_aw_mean": 1.3293009631163446
+    }
+  ],
+  "pairs": [
+    {
+      "dp": 0.00042205808852120534,
+      "dv": 0.00412775054542957,
+      "dlam": 0.014653322645868919,
+      "dp_ok": true,
+      "dv_ok": true,
+      "dlam_ok": true,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": true,
+      "pair": "ship\u2192fine",
+      "Ns": "988 \u2192 3946"
+    },
+    {
+      "dp": 0.0007382900536231475,
+      "dv": 0.00119327566737505,
+      "dlam": 0.06969417449689629,
+      "dp_ok": true,
+      "dv_ok": true,
+      "dlam_ok": false,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": false,
+      "pair": "fine\u2192finer",
+      "Ns": "3946 \u2192 15778"
+    }
+  ],
+  "verdict": "letter C: volume / \u03bb_aw settled on last nested pair; \u03bb_max climbing at holes/creases is a sharp-hole singularity (Mike 2026-09-12 \u2014 perfectly sharp hole in the geometry input; real creases have a small radius). Do not chase \u03bb_max with more global refine. Not mesh-failed. p325 fine\u2192finer \u0394V=1.60% \u0394\u03bb_max=8.44% \u0394\u03bb_aw=0.14%; p358 fine\u2192finer \u0394V=20.32% \u0394\u03bb_max=121.19% \u0394\u03bb_aw=8.42% 35.8 kPa is a CFL blow-up on the outward tape (not a grade station).",
+  "same_load": {
+    "letter": "C",
+    "nested": [
+      "ship",
+      "fine",
+      "finer"
+    ],
+    "camera": {
+      "az": 0.55,
+      "el": 0.38,
+      "rest": {
+        "cx": 1.414122579473584e-05,
+        "cy": 0.0020282114940870302,
+        "span": 0.16020874334671883
+      },
+      "load": {
+        "cx": -0.0030207936983418712,
+        "cy": 0.0032462833615666264,
+        "span": 0.2510379273604944
+      }
+    },
+    "timings": {
+      "ship": {
+        "density": "ship",
+        "N": 988,
+        "engine_elapsed_s": 3.05,
+        "starter_s": 0.32,
+        "starter_plus_engine_s": 3.37,
+        "cycles": 4301,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      },
+      "fine": {
+        "density": "fine",
+        "N": 3946,
+        "engine_elapsed_s": 14.34,
+        "starter_s": 0.31,
+        "starter_plus_engine_s": 14.65,
+        "cycles": 6603,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      },
+      "finer": {
+        "density": "finer",
+        "N": 15778,
+        "engine_elapsed_s": 109.72,
+        "starter_s": 0.7,
+        "starter_plus_engine_s": 110.43,
+        "cycles": 9765,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      }
+    },
+    "session_forks": {
+      "finer-stop5e7": {
+        "engine_elapsed_s": 109.72,
+        "starter_s": 0.7,
+        "starter_plus_engine_s": 110.43,
+        "cycles": 9765,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL",
+        "density": "finer-stop5e7",
+        "N": 15778,
+        "note": "C-refine finer \u2014 STOP Tmin=5e-7"
+      },
+      "finer-vanilla": {
+        "engine_elapsed_s": 4.39,
+        "starter_s": 0.53,
+        "starter_plus_engine_s": 4.92,
+        "cycles": 619,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL",
+        "density": "finer-vanilla",
+        "N": 15778,
+        "note": "vanilla finer STOP 1e-6 (not the nested-grade row; see forks/)"
+      }
+    },
+    "loads": {
+      "p325": [
+        {
+          "density": "ship",
+          "N": 988,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "t_target": 0.02,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.020014,
+          "p_Pa": 32522.749999999996,
+          "lam_max": 2.821794172245796,
+          "V_mL": 1720.4772324230087,
+          "Psi_J": 30.05916425032189,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.5504590118465145,
+          "lam_p90": 1.9813472751477759,
+          "lambda_field": {
+            "lam_max": 2.821794172245796,
+            "lam_min": 1.1423668554422377,
+            "lam_mean": 1.5473243199624795,
+            "lam_aw_mean": 1.5504590118465145,
+            "lam_p50": 1.4866027774047987,
+            "lam_p90": 1.9813472751477759,
+            "lam_p99": 2.652932236074674,
+            "n_quads": 986
+          }
+        },
+        {
+          "density": "fine",
+          "N": 3946,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "t_target": 0.02,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200034,
+          "p_Pa": 32505.525,
+          "lam_max": 2.9823763028351786,
+          "V_mL": 1751.1460400823944,
+          "Psi_J": 30.28995322551136,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.532573562184023,
+          "lam_p90": 1.9605232397096872,
+          "lambda_field": {
+            "lam_max": 2.9823763028351786,
+            "lam_min": 1.1344494002401293,
+            "lam_mean": 1.5292288919369361,
+            "lam_aw_mean": 1.532573562184023,
+            "lam_p50": 1.4808494610085605,
+            "lam_p90": 1.9605232397096872,
+            "lam_p99": 2.582871342820891,
+            "n_quads": 3944
+          }
+        },
+        {
+          "density": "finer",
+          "N": 15778,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "t_target": 0.02,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200044,
+          "p_Pa": 32507.149999999998,
+          "lam_max": 3.2340165914288033,
+          "V_mL": 1779.1116080102,
+          "Psi_J": 30.99241387773319,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.5304871182781221,
+          "lam_p90": 1.9627788402515614,
+          "lambda_field": {
+            "lam_max": 3.2340165914288033,
+            "lam_min": 1.0950527915719441,
+            "lam_mean": 1.5269764237983179,
+            "lam_aw_mean": 1.5304871182781221,
+            "lam_p50": 1.4832633983290335,
+            "lam_p90": 1.9627788402515614,
+            "lam_p99": 2.5676214542502955,
+            "n_quads": 15776
+          }
+        }
+      ],
+      "p358": [
+        {
+          "density": "ship",
+          "N": 988,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "t_target": 0.022,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220003,
+          "p_Pa": 35750.487499999996,
+          "lam_max": 18.89904783033442,
+          "V_mL": 32043.765229609828,
+          "Psi_J": 590.9396107128763,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 3.3668190892047094,
+          "lam_p90": 6.375130600412247,
+          "lambda_field": {
+            "lam_max": 18.89904783033442,
+            "lam_min": 1.1604604598977164,
+            "lam_mean": 3.352778407504014,
+            "lam_aw_mean": 3.3668190892047094,
+            "lam_p50": 2.5623008937585574,
+            "lam_p90": 6.375130600412247,
+            "lam_p99": 14.637284818044494,
+            "n_quads": 986
+          }
+        },
+        {
+          "density": "fine",
+          "N": 3946,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "t_target": 0.022,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0219265,
+          "p_Pa": 35630.5625,
+          "lam_max": 57.50393830113913,
+          "V_mL": 47050.5693493049,
+          "Psi_J": 1103.0203410810352,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 3.896563828997898,
+          "lam_p90": 6.302717638443563,
+          "lambda_field": {
+            "lam_max": 57.50393830113913,
+            "lam_min": 1.1287372319772144,
+            "lam_mean": 3.9453509044576673,
+            "lam_aw_mean": 3.896563828997898,
+            "lam_p50": 2.4760428586870122,
+            "lam_p90": 6.302717638443563,
+            "lam_p99": 30.398581086901967,
+            "n_quads": 3944
+          }
+        },
+        {
+          "density": "finer",
+          "N": 15778,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "t_target": 0.022,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0218243,
+          "p_Pa": 35464.4875,
+          "lam_max": 127.19073691057459,
+          "V_mL": 37491.22318982316,
+          "Psi_J": 1186.1995038090533,
+          "punch": false,
+          "picked_by": "p",
+          "station_note": "ANIM t=21.8 ms p=35464 Pa (target t\u224822 ms / 35750 Pa)",
+          "lam_aw_mean": 3.5684982198679585,
+          "lam_p90": 5.527033664007039,
+          "lambda_field": {
+            "lam_max": 127.19073691057459,
+            "lam_min": 1.1140007624266788,
+            "lam_mean": 3.6462310927413726,
+            "lam_aw_mean": 3.5684982198679585,
+            "lam_p50": 2.3828662761701427,
+            "lam_p90": 5.527033664007039,
+            "lam_p99": 32.12673113399455,
+            "n_quads": 15776
+          }
+        }
+      ]
+    },
+    "pairs": {
+      "p325": [
+        {
+          "pair": "ship\u2192fine",
+          "Ns": "988 \u2192 3946",
+          "load": "p325",
+          "dv": 0.017825756180564947,
+          "dlam": 0.05690781140907216,
+          "daw": 0.011535583672857478,
+          "dpsi": 0.007677824082783716,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        },
+        {
+          "pair": "fine\u2192finer",
+          "Ns": "3946 \u2192 15778",
+          "load": "p325",
+          "dv": 0.01596986618345646,
+          "dlam": 0.08437576718752904,
+          "daw": 0.0013613988635740473,
+          "dpsi": 0.023191209540402585,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        }
+      ],
+      "p358": [
+        {
+          "pair": "ship\u2192fine",
+          "Ns": "988 \u2192 3946",
+          "load": "p358",
+          "dv": 0.468322121703355,
+          "dlam": 2.042689706771412,
+          "daw": 0.15734279916962265,
+          "dpsi": 0.866553402555658,
+          "dv_ok": false,
+          "dlam_ok": false,
+          "daw_ok": false,
+          "pass": false
+        },
+        {
+          "pair": "fine\u2192finer",
+          "Ns": "3946 \u2192 15778",
+          "load": "p358",
+          "dv": 0.2031717424822822,
+          "dlam": 1.2118613206020186,
+          "daw": 0.08419356733963985,
+          "dpsi": 0.07541036155915028,
+          "dv_ok": false,
+          "dlam_ok": false,
+          "daw_ok": false,
+          "pass": false
+        }
+      ]
+    },
+    "station_notes": [
+      "C finer p358: ANIM t=21.8 ms p=35464 Pa (target t\u224822 ms / 35750 Pa)"
+    ],
+    "note": "Letter C. Grade at the same PLOAD, not first \u03bb\u22652. engine_elapsed_s is OpenRadioss ELAPSED TIME; post/contact-gap is not solve time. Peak \u03bb_max at holes/creases is a sharp-hole singularity \u2014 do not chase with global refine. Volume / \u03bb_aw is the useful signal. Frame stations: C finer p358: ANIM t=21.8 ms p=35464 Pa (target t\u224822 ms / 35750 Pa).",
+    "gates": {
+      "dV": 0.05,
+      "dlam_max": 0.02,
+      "dlam_aw": 0.02
+    }
+  }
+}

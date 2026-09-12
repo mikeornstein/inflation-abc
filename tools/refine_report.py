@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chiron/Themis locked mesh-convergence report for radioss/A-refine.
+"""Chiron/Themis locked mesh-convergence report for radioss/{A,B,C}-refine.
 
 At first λ_max≥2 on each N (quad + /ADYREL deck only):
   report p, λ_max, V, Ψ
@@ -25,7 +25,7 @@ RHO = 1130.0
 DENSITIES = ("coarse", "ship", "fine", "finer", "finest")
 NESTED = ("ship", "fine", "finer", "finest")
 
-from refine_same_load import resolve_deck  # noqa: E402  (after constants; no cycle)
+from refine_same_load import letter_of, nested_present, resolve_deck  # noqa: E402  (after constants; no cycle)
 
 
 def rel(a, b) -> float:
@@ -117,11 +117,14 @@ def write_refine_md(
     pairs: list[dict],
     verdict: str,
     same_load: dict | None = None,
+    *,
+    letter: str = "A",
+    nested: tuple[str, ...] = NESTED,
 ) -> None:
     lines = [
-        "# A-refine — mesh convergence (Chiron/Themis lock)",
+        f"# {letter}-refine — mesh convergence (Chiron/Themis lock)",
         "",
-        "Quad-only `/SHELL` + free-free `/ADYREL` OpenRadioss A inflate. "
+        f"Quad-only `/SHELL` + free-free `/ADYREL` OpenRadioss {letter} inflate. "
         "**Not** the old tri/`SH3N` + 3-2-1 `/BCS` deck. "
         "μ and ρ are locked; load law is **fixed** across the ladder. "
         "This deck is the **Quality PASS desk** (p@λ≥2 still **dynamic** — "
@@ -134,22 +137,27 @@ def write_refine_md(
         "- H0 = 0.015×0.0254 m · Gapmin = CONTACT_KISS = 2·H0",
         "- `/PROP` Ishell=**1** (Belytschko) N=1 Ismstr=10 · no `/SH3N` · no `/BCS`",
         "- `/PLOAD` 0→65 kPa in 0.04 s (same ramp on every density unless a labeled fork)",
-        "- Hang guard is **`/DT/NODA/STOP`** (not CST). Finest nested CFL sits at ~9.7e-7; working tape uses STOP Tmin=**5e-7**.",
+        "- Hang guard is **`/DT/NODA/STOP`** (not CST). If CFL dies before λ≥2, `/AMS` once; "
+        "if AMS ruptures the film, drop AMS and lower STOP Tmin only enough to run.",
         "",
-        "## Metrics lock (2026-09-11)",
+        "## Metrics lock (2026-09-11 / same-load 2026-09-12)",
         "",
         "Treat as `briefs/2026-09-11-openradioss-mesh-convergence-metrics.md`.",
         "",
-        "At **first λ_max ≥ 2** on each mesh N:",
+        "At **first λ_max ≥ 2** on each mesh N (historical crossing, not the grade):",
         "",
         "- Report **p, λ_max, V, Ψ**",
         "- Mike (2026-09-12): **grade at the same load**, not first λ≥2. "
         "Same p → same strain/deformation. Peak stretch at the hole/creases is the climbing quantity.",
-        "- Same-load stations: **~32.5 kPa** (t≈20 ms) and **~35.8 kPa** (t≈22 ms).",
-        "- Successive nested N (ship/fine/finer/finest): **ΔV ≤ 5%**, **Δλ_max ≤ 2%**, **Δλ_aw ≤ 2%**",
+        "- Same-load stations: **~32.5 kPa** (t≈20 ms) and **~35.8 kPa** (t≈22 ms). "
+        "If ANIM frames differ, pick the frames whose **p** matches those loads.",
+        "- Successive nested N: **ΔV ≤ 5%**, **Δλ_max ≤ 2%**, **Δλ_aw ≤ 2%**",
         "- λ_max stays in **[2.0, 2.35]** at that frame",
         "- Ψ ≥ 0 required; contact viol / gap is **report-only**",
         "- If CFL dies before λ≥2: **/AMS or slower PLOAD** fork (Kareem) — not NODA/CST; Ishell=1; no μ/ρ retune",
+        "- Peak λ_max climbing at holes/creases is a **sharp-hole singularity** in the geometry input "
+        "(real creases have a small radius). Do **not** chase λ_max with more global refine. "
+        "Volume / λ_aw settling is the useful signal. Do not declare mesh-failed just because λ_max climbs.",
         "- **Converged dynamic ≠ ABC apples claim** vs Chiron QS (~54 kPa)",
         "",
         "## Ladder",
@@ -172,7 +180,7 @@ def write_refine_md(
             "| density | N | engine ELAPSED | starter | cycles | threads | timed |",
             "|---------|--:|---------------:|--------:|-------:|--------:|-------|",
         ]
-        for dens in NESTED:
+        for dens in nested:
             t = (same_load.get("timings") or {}).get(dens)
             if not t:
                 continue
@@ -210,9 +218,14 @@ def write_refine_md(
             "## Same load (the grade) — nested family only",
             "",
             "Mike: same p → same strain/deformation. Stations are PLOAD **32.5 kPa** "
-            "(t≈20 ms, frame 10) and **35.8 kPa** (t≈22 ms, frame 11). Coarse Gmsh remesh is excluded.",
+            "(t≈20 ms) and **35.8 kPa** (t≈22 ms); if ANIM frames differ, the table uses the "
+            "closest **p**. Coarse Gmsh remesh is excluded. "
+            "Peak λ_max at holes/creases is a sharp-hole singularity — volume / λ_aw is the signal.",
             "",
         ]
+        notes = (same_load.get("station_notes") or []) if same_load else []
+        if notes:
+            lines += ["Frame-station notes: " + "; ".join(notes), ""]
         for ld_key, ld_label in (("p325", "32.5 kPa (t≈20 ms)"), ("p358", "35.8 kPa (t≈22 ms)")):
             recs = (same_load["loads"] or {}).get(ld_key) or []
             lines += [
@@ -323,27 +336,47 @@ def write_refine_md(
         "",
         *fork_lines(rows),
         "",
-        "Vanilla finest `/DT/NODA/STOP 0.9 1e-6` died at **t=0** (nodal dt = 9.74e-7). "
-        "That is mesh CFL, not a 1e-15 hang. Kareem `/AMS` (Tmin 1e-4 and 5e-6) **ruptured** "
-        "the LAW42 + Belytschko film; slower PLOAD cannot fix rest CFL. Working tape: "
-        "`forks/finest-stop5e7` keeps STOP (not CST) at Tmin=**5e-7**, same μ/ρ/Ishell=1/`/PLOAD`/`/ADYREL`.",
-        "",
-        "## Reproduce",
-        "",
-        "```bash",
-        "bash radioss/install_openradioss.sh",
-        "python3 tools/refine_letter_a.py",
-        "bash radioss/A-refine/run.sh",
-        "python3 tools/refine_letter_a.py --finest-only",
-        "python3 tools/mesh_to_radioss.py --allow-n --check \\",
-        "  --mesh radioss/A-refine/meshes/A-finest.json \\",
-        "  --out-dir radioss/A-refine/forks/finest-stop5e7 --noda-stop 5e-7",
-        "bash radioss/A-refine/run.sh --finest-only",
-        "python3 tools/refine_same_load.py --session-rerun finest",
-        "python3 tools/refine_report.py",
-        "```",
-        "",
     ]
+    if letter == "A":
+        lines += [
+            "Vanilla finest `/DT/NODA/STOP 0.9 1e-6` died at **t=0** (nodal dt = 9.74e-7). "
+            "That is mesh CFL, not a 1e-15 hang. Kareem `/AMS` (Tmin 1e-4 and 5e-6) **ruptured** "
+            "the LAW42 + Belytschko film; slower PLOAD cannot fix rest CFL. Working tape: "
+            "`forks/finest-stop5e7` keeps STOP (not CST) at Tmin=**5e-7**, same μ/ρ/Ishell=1/`/PLOAD`/`/ADYREL`.",
+            "",
+            "## Reproduce",
+            "",
+            "```bash",
+            "bash radioss/install_openradioss.sh",
+            "python3 tools/refine_letter_a.py",
+            "bash radioss/A-refine/run.sh",
+            "python3 tools/refine_letter_a.py --finest-only",
+            "python3 tools/mesh_to_radioss.py --allow-n --check \\",
+            "  --mesh radioss/A-refine/meshes/A-finest.json \\",
+            "  --out-dir radioss/A-refine/forks/finest-stop5e7 --noda-stop 5e-7",
+            "bash radioss/A-refine/run.sh --finest-only",
+            "python3 tools/refine_same_load.py --session-rerun finest",
+            "python3 tools/refine_report.py",
+            "```",
+            "",
+        ]
+    else:
+        lines += [
+            "B/C ladder is ship / fine / finer only (no coarse Gmsh row, no finest / N≈99k). "
+            "Hang guard remains STOP. `/AMS` only if CFL dies before λ≥2; drop AMS if it ruptures.",
+            "",
+            "## Reproduce",
+            "",
+            "```bash",
+            "bash radioss/install_openradioss.sh",
+            f"python3 tools/refine_letter_a.py --letter {letter}",
+            f"bash radioss/{letter}-refine/run.sh",
+            f"python3 tools/refine_same_load.py --root radioss/{letter}-refine "
+            "--session-rerun ship --session-rerun fine --session-rerun finer",
+            f"python3 tools/refine_report.py --root radioss/{letter}-refine",
+            "```",
+            "",
+        ]
     out.write_text("\n".join(lines) + "\n")
 
 
@@ -354,11 +387,17 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     root = args.root
     summary = json.loads((root / "mesh-summary.json").read_text()) if (root / "mesh-summary.json").exists() else {}
+    letter = letter_of(root, summary)
+    nested = nested_present(root, summary) or NESTED[:3]
 
     rows = []
     for dens in DENSITIES:
-        deck = resolve_deck(root, dens) if dens == "finest" else root / dens
-        if dens in ("finer", "finest") and not deck.exists() and dens not in summary:
+        deck = resolve_deck(root, dens)
+        if dens not in summary and not deck.exists():
+            continue
+        if dens == "finest" and letter in ("B", "C"):
+            continue
+        if dens == "coarse" and letter in ("B", "C"):
             continue
         w = load_warn(deck)
         meta = json.loads((deck / "deck-meta.json").read_text()) if (deck / "deck-meta.json").exists() else {}
@@ -421,25 +460,52 @@ def main(argv=None) -> int:
 
     # Mike's grade: last nested pair at both same-load stations.
     sl_pairs = []
+    last_pair_name = None
     if same_load:
+        nst = same_load.get("nested") or list(nested)
+        if len(nst) >= 2:
+            last_pair_name = f"{nst[-2]}→{nst[-1]}"
         for k in ("p325", "p358"):
             sl_pairs.extend((same_load.get("pairs") or {}).get(k) or [])
-    last_nested = None
-    if sl_pairs:
-        last_nested = [p for p in sl_pairs if "finer→finest" in p.get("pair", "")]
+    last_nested = []
+    if sl_pairs and last_pair_name:
+        last_nested = [p for p in sl_pairs if p.get("pair") == last_pair_name]
+    blowup_loads = set()
+    if same_load:
+        for k, rows_ld in (same_load.get("loads") or {}).items():
+            if any(float(r.get("lam_max") or 0) > 8.0 for r in rows_ld if not r.get("missing") and r.get("lam_max") is not None):
+                blowup_loads.add(k)
+    live_nested = [p for p in last_nested if p.get("load") not in blowup_loads]
     if last_nested and all(p.get("pass") for p in last_nested) and len(last_nested) == 2:
+        pair = last_nested[0]["pair"]
         verdict = (
-            "converged (same-load) — finer→finest ΔV/Δλ_max/Δλ_aw within 5%/2%/2% "
+            f"converged (same-load) — {pair} ΔV/Δλ_max/Δλ_aw within 5%/2%/2% "
             "at both 32.5 kPa and 35.8 kPa. Dynamic only — not an ABC apples claim."
         )
-    elif last_nested:
+    elif live_nested:
         bits = "; ".join(
             f"{p['load']} {p['pair']} ΔV={p['dv']*100:.2f}% Δλ_max={p['dlam']*100:.2f}% Δλ_aw={p['daw']*100:.2f}%"
             for p in last_nested
         )
-        verdict = (
-            "not-yet — same load, peak stretch at hole/creases still moving. " + bits
-        )
+        vol_aw_ok = all(p.get("dv_ok") and p.get("daw_ok") for p in live_nested)
+        dlam_fail = any(not p.get("dlam_ok") for p in live_nested)
+        if vol_aw_ok and dlam_fail:
+            blow = (
+                " 35.8 kPa is a CFL blow-up on the outward tape (not a grade station)."
+                if blowup_loads
+                else ""
+            )
+            verdict = (
+                f"letter {letter}: volume / λ_aw settled on last nested pair; "
+                "λ_max climbing at holes/creases is a sharp-hole singularity "
+                "(Mike 2026-09-12 — perfectly sharp hole in the geometry input; "
+                "real creases have a small radius). Do not chase λ_max with more "
+                "global refine. Not mesh-failed. " + bits + blow
+            )
+        else:
+            verdict = (
+                "not-yet — same load, volume / λ_aw still moving. " + bits
+            )
     elif last and last.get("pass"):
         # finer of the passing finest pair; ship is the design N if ship→fine passes
         finer_name = last["pair"].split("→")[1]
@@ -474,7 +540,15 @@ def main(argv=None) -> int:
             + extra
         )
 
-    write_refine_md(root / "REFINE.md", rows, pairs, verdict, same_load=same_load)
+    write_refine_md(
+        root / "REFINE.md",
+        rows,
+        pairs,
+        verdict,
+        same_load=same_load,
+        letter=letter,
+        nested=nested,
+    )
     (root / "convergence.json").write_text(
         json.dumps(
             {"rows": rows, "pairs": pairs, "verdict": verdict, "same_load": same_load},

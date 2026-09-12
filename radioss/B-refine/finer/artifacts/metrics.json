@@ -1,0 +1,36 @@
+[
+  {
+    "frame": 0,
+    "file": "Ainflate_A001.vtk",
+    "t": 0.0,
+    "p_Pa": 0.0,
+    "lam_max": 1.0000000074505808,
+    "V_m3": 0.00039503226734790816,
+    "V_mL": 395.03226734790815,
+    "Psi_J": 0.0,
+    "Psi_neg_elems": 0,
+    "gap_m": null,
+    "gap_mm": null,
+    "gap_signed_m": null,
+    "punch": false,
+    "n_quads": 71232,
+    "n_tris": 0
+  },
+  {
+    "frame": 1,
+    "file": "Ainflate_A002.vtk",
+    "t": 0.00106319,
+    "p_Pa": 1727.6837500000001,
+    "lam_max": 1.175794384052252,
+    "V_m3": 0.00041439749767341127,
+    "V_mL": 414.3974976734113,
+    "Psi_J": 0.007788956404291947,
+    "Psi_neg_elems": 0,
+    "gap_m": null,
+    "gap_mm": null,
+    "gap_signed_m": null,
+    "punch": false,
+    "n_quads": 71232,
+    "n_tris": 0
+  }
+]

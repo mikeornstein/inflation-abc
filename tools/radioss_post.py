@@ -293,17 +293,50 @@ def contact_gap(x, Xrest, cover, ring2):
     return min_u, min_s, punch
 
 
+def prune_stale_anim(run_dir: Path, runname: str = RUNNAME) -> int:
+    """Drop ANIM/VTK older than this engine's copied .rad (leftover from a prior tape).
+
+    OpenRadioss does not delete unused A0xx slots on a shorter re-run. Post must
+    not mix those frames with the current engine.
+    """
+    rad = run_dir / f"{runname}_0001.rad"
+    if not rad.exists():
+        return 0
+    t0 = rad.stat().st_mtime - 1.0
+    n = 0
+    for p in list(run_dir.iterdir()):
+        if not p.is_file():
+            continue
+        name = p.name
+        is_anim = name.startswith(f"{runname}A") and not name.startswith(f"{runname}_")
+        is_vtk = name.startswith(f"{runname}_A") and p.suffix.lower() == ".vtk"
+        if (is_anim or is_vtk) and p.stat().st_mtime < t0:
+            p.unlink()
+            n += 1
+    return n
+
+
 def convert_anim(run_dir: Path, anim_bin: str, runname: str = RUNNAME) -> list[Path]:
+    prune_stale_anim(run_dir, runname)
     anims = sorted(p for p in run_dir.iterdir() if p.name.startswith(f"{runname}A") and p.is_file())
     vtks = []
     for anim in anims:
         suffix = anim.name[len(runname) :]  # A001
         vtk = run_dir / f"{runname}_{suffix}.vtk"
-        if not vtk.exists() or vtk.stat().st_size < 100:
+        need = (
+            not vtk.exists()
+            or vtk.stat().st_size < 100
+            or vtk.stat().st_mtime < anim.stat().st_mtime - 0.01
+        )
+        if need:
             with vtk.open("w") as out:
                 r = subprocess.run([anim_bin, str(anim)], stdout=out, stderr=subprocess.PIPE, text=True)
             if r.returncode != 0:
                 print(f"anim_to_vtk failed {anim}: {r.stderr[-500:]}", file=sys.stderr)
+                try:
+                    vtk.unlink()
+                except OSError:
+                    pass
                 continue
         vtks.append(vtk)
     return vtks
@@ -336,6 +369,7 @@ def render_frame(
     rest_fill=None,
     warn_label="WARN  first λ_max ≥ 2",
     extra_edges=None,
+    face_colors=None,
 ):
     """Orthographic +Z view (or `project`), Y up. Fill + stroke **quads**."""
     w = h = size
@@ -376,7 +410,9 @@ def render_frame(
     edge = (52, 52, 60)
     beige = rest_fill if rest_fill is not None else None
     for zc, fi, q in faces:
-        if beige is not None:
+        if face_colors is not None and fi < len(face_colors):
+            col = tuple(int(c) for c in face_colors[fi])
+        elif beige is not None:
             col = beige
         else:
             lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
