@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Same-load A-refine grading (Mike): strain at fixed p, not first λ≥2.
+"""Same-load refine grading (Mike): strain at fixed p, not first λ≥2.
 
 Loads:
   ~32.5 kPa  (t≈20 ms, ANIM frame 10)
   ~35.8 kPa  (t≈22 ms, ANIM frame 11)
 
-Nested family only: ship / fine / finer / finest (same rest letter, V0≈354 mL).
-Wall-clock = OpenRadioss ELAPSED TIME from the engine .out (not Python post).
+If a letter's ANIM stations differ, pick the frames whose p matches those
+two loads (not a first-λ≥2 crossing). Nested family: ship / fine / finer
+(/ finest when present). Wall-clock = OpenRadioss ELAPSED TIME from the
+engine .out (not Python post).
 """
 from __future__ import annotations
 
@@ -36,6 +38,28 @@ from radioss_post import (  # noqa: E402
 )
 
 NESTED = ("ship", "fine", "finer", "finest")
+
+
+def letter_of(root: Path, summary: dict | None = None) -> str:
+    summary = summary or {}
+    L = str(summary.get("letter") or "").upper()
+    if L in ("A", "B", "C"):
+        return L
+    name = root.name
+    if len(name) >= 1 and name[0] in "ABC" and name.endswith("-refine"):
+        return name[0]
+    return "A"
+
+
+def nested_present(root: Path, summary: dict | None = None) -> tuple[str, ...]:
+    summary = summary or {}
+    out = []
+    for dens in NESTED:
+        if dens in summary or (root / dens).exists() or (
+            dens == "finest" and resolve_deck(root, dens).exists()
+        ):
+            out.append(dens)
+    return tuple(out)
 
 
 def resolve_deck(root: Path, dens: str) -> Path:
@@ -126,10 +150,19 @@ def parse_timing(run_dir: Path) -> dict:
     return out
 
 
-def pick_frame(rows: list[dict], t_target: float) -> dict | None:
+def pick_frame(rows: list[dict], load: dict) -> dict | None:
+    """Closest PLOAD station to the target pressure; t is the tie-break.
+
+    A uses t≈20/22 ms. If B/C ANIM frames differ, p-match wins.
+    """
     if not rows:
         return None
-    return min(rows, key=lambda r: abs(float(r["t"]) - t_target))
+    p_target = float(load.get("p_Pa", 0.0))
+    t_target = float(load.get("t", 0.0))
+    return min(
+        rows,
+        key=lambda r: (abs(float(r["p_Pa"]) - p_target), abs(float(r["t"]) - t_target)),
+    )
 
 
 def load_metrics(deck: Path) -> list[dict]:
@@ -155,31 +188,40 @@ def _aabb_camera(xy: np.ndarray, pad: float) -> tuple[float, float, float]:
     return float(cx), float(cy), float(span)
 
 
-def rest_camera(root: Path) -> tuple[float, float, float]:
+def rest_camera(root: Path, letter: str = "A") -> tuple[float, float, float]:
     """Same camera across rest densities, fitted to the undeformed letter."""
-    ship = json.loads((root / "meshes" / "A-ship.json").read_text())
+    ship = json.loads((root / "meshes" / f"{letter}-ship.json").read_text())
     pos = np.asarray(ship["pos0"], dtype=float).reshape(-1, 3)
     xy = np.asarray([project(p) for p in pos], dtype=float)
     return _aabb_camera(xy, 1.22)
 
 
-def load_camera(root: Path) -> tuple[float, float, float]:
+def load_camera(root: Path, nested: tuple[str, ...] | None = None) -> tuple[float, float, float]:
     """Same camera at both grade pressures, fitted to inflated AABB (not rest).
 
     Rest-fitted framing crops the balloon: inflation puffs in Z, which this
     3/4 view maps to +Y. Union of nested p325/p358 VTKs keeps every N in frame.
     """
+    order = nested or nested_present(root)
     chunks = []
-    for dens in NESTED:
+    for dens in order:
         deck = resolve_deck(root, dens)
-        for name in ("Ainflate_A011.vtk", "Ainflate_A012.vtk"):
+        rows = load_metrics(deck)
+        picked = []
+        for ld in LOADS:
+            row = pick_frame(rows, ld) if rows else None
+            if row and row.get("file"):
+                picked.append(row["file"])
+        if not picked:
+            picked = ["Ainflate_A011.vtk", "Ainflate_A012.vtk"]
+        for name in dict.fromkeys(picked):
             vtk = deck / "run" / name
             if not vtk.exists():
                 continue
             x, _cells, _t = parse_vtk(vtk)
             chunks.append(np.asarray([project(p) for p in x], dtype=float))
     if not chunks:
-        return rest_camera(root)
+        return rest_camera(root, letter_of(root))
     xy = np.vstack(chunks)
     return _aabb_camera(xy, 1.18)
 
@@ -263,8 +305,8 @@ def rest_and_cover(run_dir: Path):
     return np.asarray(X, dtype=np.float64), quads, orphans, cover
 
 
-def grade_load(rows_by_dens: dict, load: dict) -> list[dict]:
-    order = [d for d in NESTED if d in rows_by_dens]
+def grade_load(rows_by_dens: dict, load: dict, nested: tuple[str, ...] | None = None) -> list[dict]:
+    order = [d for d in (nested or NESTED) if d in rows_by_dens]
     pairs = []
     for i in range(len(order) - 1):
         a, b = rows_by_dens[order[i]], rows_by_dens[order[i + 1]]
@@ -301,23 +343,30 @@ def main(argv=None) -> int:
     root = args.root
     stills = root / "stills"
     stills.mkdir(parents=True, exist_ok=True)
-    cam_rest = rest_camera(root)
-    cam_load = load_camera(root)
+    summary = json.loads((root / "mesh-summary.json").read_text()) if (root / "mesh-summary.json").exists() else {}
+    letter = letter_of(root, summary)
+    nested = nested_present(root, summary) or NESTED[:3]
+    v0 = float((summary.get("ship") or {}).get("V0_mL") or 0.0)
+    cam_rest = rest_camera(root, letter)
+    cam_load = load_camera(root, nested)
     (root / "camera.json").write_text(
         json.dumps(
             {
+                "letter": letter,
                 "az": AZ,
                 "el": EL,
                 "rest": {"cx": cam_rest[0], "cy": cam_rest[1], "span": cam_rest[2]},
                 "load": {"cx": cam_load[0], "cy": cam_load[1], "span": cam_load[2]},
-                "note": "Rest camera fitted to undeformed ship. Load camera is the same at 32.5 and 35.8 kPa, fitted to nested inflated AABB.",
+                "note": (
+                    f"Letter {letter}: rest camera fitted to undeformed ship. "
+                    "Load camera is the same at 32.5 and 35.8 kPa, fitted to nested inflated AABB."
+                ),
             },
             indent=2,
         )
         + "\n"
     )
 
-    summary = json.loads((root / "mesh-summary.json").read_text()) if (root / "mesh-summary.json").exists() else {}
     session = set(args.session_rerun)
 
     timings = {}
@@ -326,8 +375,9 @@ def main(argv=None) -> int:
     rest_labs = []
     load_imgs = {ld["key"]: [] for ld in LOADS}
     load_labs = {ld["key"]: [] for ld in LOADS}
+    station_notes = []
 
-    for dens in NESTED:
+    for dens in nested:
         deck = resolve_deck(root, dens)
         if not deck.exists():
             continue
@@ -348,9 +398,9 @@ def main(argv=None) -> int:
             print(f"skip stills {dens}: no VTK")
         else:
             X, quads, orphans, cover = pack
-            # rest still
             if not args.no_stills:
-                hud = [f"{dens}  N={n}  rest", f"V0 ≈ {(summary.get(dens) or {}).get('V0_mL', 354):.0f} mL  /ADYREL"]
+                v0_d = float((summary.get(dens) or {}).get("V0_mL") or v0 or 0.0)
+                hud = [f"{letter}-{dens}  N={n}  rest", f"V0 ≈ {v0_d:.0f} mL  /ADYREL"]
                 img = render_still(X, quads, X, cam_rest, hud, rest=True, size=640)
                 img.save(stills / f"{dens}_rest.png")
                 rest_imgs.append(img.copy())
@@ -362,8 +412,9 @@ def main(argv=None) -> int:
                 "N": n,
                 "load": ld["key"],
                 "p_target_Pa": ld["p_Pa"],
+                "t_target": ld["t"],
             }
-            row = pick_frame(rows, ld["t"]) if rows else None
+            row = pick_frame(rows, ld) if rows else None
             if row is None:
                 rec["missing"] = True
                 loads_out[ld["key"]].append(rec)
@@ -380,6 +431,15 @@ def main(argv=None) -> int:
                     "punch": row.get("punch"),
                 }
             )
+            dt = abs(float(row["t"]) - ld["t"])
+            dp = abs(float(row["p_Pa"]) - ld["p_Pa"])
+            rec["picked_by"] = "p"
+            if dt > 0.0015 or dp > 200.0:
+                rec["station_note"] = (
+                    f"ANIM t={row['t']*1e3:.3g} ms p={row['p_Pa']:.0f} Pa "
+                    f"(target t≈{ld['t_ms']} ms / {ld['p_Pa']:.0f} Pa)"
+                )
+                station_notes.append(f"{letter} {dens} {ld['key']}: {rec['station_note']}")
             vtk = vtk_for_row(run_dir, row) if pack is not None else None
             if vtk is not None and pack is not None:
                 x, _cells, _t = field_from_vtk(vtk)
@@ -389,7 +449,7 @@ def main(argv=None) -> int:
                 rec["lambda_field"] = field
                 if not args.no_stills:
                     hud = [
-                        f"{dens}  N={n}  {ld['label']}",
+                        f"{letter}-{dens}  N={n}  {ld['label']}",
                         f"t={row['t']*1e3:.3g} ms  p={row['p_Pa']:.0f} Pa",
                         f"λ_max={row['lam_max']:.3f}  λ_aw={field['lam_aw_mean']:.3f}  V={row['V_mL']:.1f} mL",
                     ]
@@ -407,7 +467,6 @@ def main(argv=None) -> int:
                     load_imgs[ld["key"]].append(img.copy())
                     load_labs[ld["key"]].append(f"{dens} {n}")
             else:
-                # fall back to warn-frame field if this is the warn load
                 w = deck / "artifacts" / "lambda_field.json"
                 if w.exists() and abs(float(row["t"]) - 0.020) < 0.0015:
                     field = json.loads(w.read_text())
@@ -415,21 +474,29 @@ def main(argv=None) -> int:
                     rec["lam_p90"] = field.get("lam_p90")
             loads_out[ld["key"]].append(rec)
 
+    v0_s = f"{v0:.0f} mL" if v0 else "ship V0"
     if not args.no_stills and rest_imgs:
         concat_h(
             rest_imgs,
             rest_labs,
-            "Undeformed rest — nested refine ladder (same V0 ≈ 354 mL, same camera)",
+            f"Undeformed rest — letter {letter} nested ladder (same V0 ≈ {v0_s}, same camera)",
         ).save(stills / "rest_lineup.png")
     for ld in LOADS:
         if load_imgs[ld["key"]]:
             concat_h(
                 load_imgs[ld["key"]],
                 load_labs[ld["key"]],
-                f"Same load {ld['label']} (t≈{ld['t_ms']} ms) — same camera",
+                f"Letter {letter} same load {ld['label']} (t≈{ld['t_ms']} ms) — same camera",
             ).save(stills / f"{ld['key']}_lineup.png")
 
-    pairs = {ld["key"]: grade_load({r["density"]: r for r in loads_out[ld["key"]] if "lam_max" in r}, ld) for ld in LOADS}
+    pairs = {
+        ld["key"]: grade_load(
+            {r["density"]: r for r in loads_out[ld["key"]] if "lam_max" in r},
+            ld,
+            nested,
+        )
+        for ld in LOADS
+    }
 
     session_forks = {}
     vanilla = root / "finest"
@@ -437,7 +504,7 @@ def main(argv=None) -> int:
         vt = parse_timing(vanilla / "run")
         vt["rerun_this_session"] = "finest" in session
         vt["density"] = "finest-vanilla"
-        vt["N"] = 99456
+        vt["N"] = int((summary.get("finest") or {}).get("N") or 99456)
         vt["note"] = "STOP Tmin=1e-6 died at t=0 (nodal dt 9.74e-7). Mesh CFL, not a hang."
         session_forks["finest-vanilla"] = vt
         (vanilla / "artifacts").mkdir(parents=True, exist_ok=True)
@@ -447,13 +514,28 @@ def main(argv=None) -> int:
         at = parse_timing(ams / "run")
         at["rerun_this_session"] = True
         at["density"] = "finest-ams"
-        at["N"] = 99456
+        at["N"] = int((summary.get("finest") or {}).get("N") or 99456)
         at["note"] = "Kareem /AMS Tmin=5e-6: ERROR TERMINATION, shells ruptured. Same μ/ρ. Hang guard still STOP."
         session_forks["finest-ams"] = at
         (ams / "artifacts").mkdir(parents=True, exist_ok=True)
         (ams / "artifacts" / "timing.json").write_text(json.dumps(at, indent=2) + "\n")
 
+    note = (
+        f"Letter {letter}. Grade at the same PLOAD, not first λ≥2. "
+        "engine_elapsed_s is OpenRadioss ELAPSED TIME; post/contact-gap is not solve time. "
+        "Peak λ_max at holes/creases is a sharp-hole singularity — do not chase with global refine. "
+        "Volume / λ_aw is the useful signal."
+    )
+    if station_notes:
+        note += " Frame stations: " + "; ".join(station_notes) + "."
+    if letter == "A":
+        note += (
+            " Finer 24864 elapsed recovered from existing .out (not re-run this session). "
+            "Finest working tape is forks/finest-stop5e7 (STOP Tmin=5e-7); vanilla 1e-6 CFL'd at t=0; /AMS ruptured."
+        )
     payload = {
+        "letter": letter,
+        "nested": list(nested),
         "camera": {
             "az": AZ,
             "el": EL,
@@ -464,12 +546,8 @@ def main(argv=None) -> int:
         "session_forks": session_forks,
         "loads": loads_out,
         "pairs": pairs,
-        "note": (
-            "Grade at the same PLOAD, not first λ≥2. "
-            "engine_elapsed_s is OpenRadioss ELAPSED TIME; post/contact-gap is not solve time. "
-            "Finer 24864 elapsed recovered from existing .out (not re-run this session). "
-            "Finest working tape is forks/finest-stop5e7 (STOP Tmin=5e-7); vanilla 1e-6 CFL'd at t=0; /AMS ruptured."
-        ),
+        "station_notes": station_notes,
+        "note": note,
         "gates": {"dV": DV_MAX, "dlam_max": DLAM_MAX, "dlam_aw": DAW_MAX},
     }
     (root / "same_load.json").write_text(json.dumps(payload, indent=2) + "\n")

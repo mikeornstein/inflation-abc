@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert Inflation ABC bake JSON (meshes/A.json) to an OpenRadioss deck.
+"""Convert Inflation ABC bake JSON (meshes/{A,B,C}.json) to an OpenRadioss deck.
 
 Physics-first first light:
   /PROP/SHELL  N=1  Ismstr=10  (Belytschko; QEPH ruptured at rest)
@@ -10,7 +10,7 @@ Physics-first first light:
   free-free: no /BCS; engine /ADYREL + starter /DAMP
 
 SI units. Does not touch the web-mbd JS neo-Hookean path.
-Does not remesh the midplane (ship A.json nMidTris=0).
+Does not remesh the midplane (ship A.json nMidTris=0; B/C close leftover without Gmsh).
 """
 
 from __future__ import annotations
@@ -128,7 +128,8 @@ def quadify_orphans(quads, orphans):
 
     Does not remesh existing quads (midplane stays quad). Ship A.json
     nMidTris=0; the 28 faceTris are cap orphans and pair 1:1 into 14 quads.
-    Returns (all_quads, leftover_tris). leftover must be empty for A inflate.
+    Returns (all_quads, leftover_tris). leftover must be empty for the inflate
+    part (A pairs 1:1; B/C study meshes are closed all-quad before this call).
     """
     all_quads = [tuple(int(i) for i in q) for q in quads]
     if not orphans:
@@ -190,6 +191,7 @@ def write_starter(
     pos = mesh["pos"]
     src_quads = mesh["quads"]
     src_orphans = mesh["orphans"]
+    letter = str((mesh.get("meta") or {}).get("letter") or "A").upper()
     quads, leftover = quadify_orphans(src_quads, src_orphans)
     if leftover:
         raise SystemExit(
@@ -223,13 +225,14 @@ def write_starter(
         "ams": bool(ams),
         "Ishell": 1,
         "dynamic": True,
+        "letter": letter,
     }
 
     lines = []
     w = lines.append
     w("#RADIOSS STARTER\n")
     w(header_bar())
-    w("# Inflation ABC letter A — OpenRadioss first light\n")
+    w(f"# Inflation ABC letter {letter} — OpenRadioss first light\n")
     w("# SI: kg, m, s, Pa. Do not retune μ or ρ.\n")
     if note:
         w(f"# {note}\n")
@@ -241,7 +244,7 @@ def write_starter(
         f"# Mesh {n} nodes, {len(quads)} /SHELL quads "
         f"(source {len(src_quads)} quads + {len(src_orphans)} orphan faceTris paired; SH3N=0)\n"
     )
-    w("# Midplane not remeshed (ship A.json nMidTris=0). Cap orphans quadified only.\n")
+    w(f"# Midplane not remeshed (ship {letter}.json). Cap orphans quadified / closed all-quad; no /SH3N.\n")
     w(f"# Rest enclosed volume V0 = {vol0:.8g} m^3 ({vol0*1e6:.4g} mL)\n")
     w("# Free-free: no /BCS. OpenRadioss explicit inertial-relief analogue = /ADYREL (engine)\n")
     w("#   + /DAMP Rayleigh mass (starter). Radioss has no PARAM,INREL (that is OptiStruct).\n")
@@ -254,7 +257,7 @@ def write_starter(
     w(f"{'kg':>20}{'m':>20}{'s':>20}\n")
     w(f"{'kg':>20}{'m':>20}{'s':>20}\n")
     w("/TITLE\n")
-    w("Inflation ABC A — LAW42 NH /PLOAD first light (same μ, ρ=1130)\n")
+    w(f"Inflation ABC {letter} — LAW42 NH /PLOAD first light (same μ, ρ=1130)\n")
 
     w(header_bar())
     w("/DEF_SHELL\n")
@@ -291,7 +294,7 @@ def write_starter(
 
     w(header_bar())
     w(f"/PART/{PART_QUAD}\n")
-    w(f"letter A all-quad film ({len(quads)} shells; SH3N=0)\n")
+    w(f"letter {letter} all-quad film ({len(quads)} shells; SH3N=0)\n")
     w(i10(PROP_ID) + i10(MAT_ID) + i10(0) + "\n")
 
     w(header_bar())
@@ -457,6 +460,7 @@ def write_deck_meta(path: Path, info: dict) -> None:
         "noda_stop": info.get("noda_stop"),
         "Ishell": 1,
         "dynamic": True,
+        "letter": info.get("letter", "A"),
         "n": info["n"],
         "nquads": info["nquads"],
         "nsh3n": info["nsh3n"],
@@ -511,8 +515,9 @@ def main(argv=None) -> int:
         fetch_mesh(args.mesh)
     mesh = load_mesh(args.mesh)
     n, nq, nt = mesh["n"], len(mesh["quads"]), len(mesh["orphans"])
-    print(f"mesh {args.mesh}: N={n} source_quads={nq} orphan_tris={nt} type={mesh['elemType']}")
-    if not args.allow_n and (n != 1554 or nq != 1540 or nt != 28):
+    letter = str((mesh.get("meta") or {}).get("letter") or "A").upper()
+    print(f"mesh {args.mesh}: letter={letter} N={n} source_quads={nq} orphan_tris={nt} type={mesh['elemType']}")
+    if not args.allow_n and letter == "A" and (n != 1554 or nq != 1540 or nt != 28):
         print(
             f"WARNING: expected ship A N=1554 / 1540 quads / 28 orphan tris; got {n}/{nq}/{nt}",
             file=sys.stderr,
@@ -565,7 +570,7 @@ def main(argv=None) -> int:
             assert any(ln.startswith("/DT/AMS") for ln in eng.splitlines())
         else:
             assert not any(ln.startswith("/AMS") for ln in text.splitlines())
-        if not args.allow_n:
+        if not args.allow_n and letter == "A":
             assert info["nquads"] == 1554, info["nquads"]
         assert info["nsh3n"] == 0
         assert abs(MU - (800.0 * 6894.757) / 1.75) < 1e-6

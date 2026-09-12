@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""All-quad letter-A film densities for the OpenRadioss refine study.
+"""All-quad letter film densities for the OpenRadioss refine study.
 
-Does not overwrite meshes/A.json. Does not retune μ/ρ.
+Does not overwrite meshes/{A,B,C}.json. Does not retune μ/ρ.
 
-Coarse = Gmsh DelQuad remesh of the ship midplane outline + prism walls.
-Ship  = locked bake meshes/A.json (N=1554).
-Fine  = nested 1-to-4 of the closed all-quad ship shell (2× h; N×4 on a surface).
-Finer = nested 1-to-4 of fine (N=24864). Study meshes may exceed web bake MAX_VERTS.
-Finest = nested 1-to-4 of finer (N=99456). Same rest letter as ship/fine/finer (not Gmsh coarse).
+Letter A (default): coarse Gmsh remesh + ship/fine/(finer/finest).
+Letters B,C (Mike 2026-09-12): ship / fine / finer only — no coarse row, no finest.
+
+Ship  = locked bake meshes/{L}.json (pair orphan cap tris; midplane not remeshed).
+        Leftover cap ears on an even-boundary patch are reconnected to /SHELL
+        (same rest letter). If unpaired tris remain (B midplane), one conforming
+        mixed 1-to-4 turns them into quads — no /SH3N, outline not Gmsh-remeshed.
+Fine  = nested linear 1-to-4 of the closed all-quad ship shell.
+Finer = nested linear 1-to-4 of fine. Study meshes may exceed web bake MAX_VERTS.
 
 Locked physics (same as A-inflate): LAW42 μ1=MU α1=2, ρ=1130, H0,
 Gapmin=CONTACT_KISS, /SHELL quads only, Ishell=1, free-free /ADYREL.
@@ -313,7 +317,9 @@ def extrude_film(pos0, mid_quads, *, nz: int, depth: float = DEPTH):
     return new_pos, new_quads, V, gates
 
 
-def subdivide_closed_quads(pos: np.ndarray, quads, *, check_size: bool = True):
+def subdivide_closed_quads(
+    pos: np.ndarray, quads, *, check_size: bool = True, want_euler: int | None = 0
+):
     """Linear 1-to-4 on a closed all-quad shell. Nested h-refinement; winding kept."""
     pos = np.asarray(pos, dtype=float)
     edge_node = {}
@@ -343,7 +349,7 @@ def subdivide_closed_quads(pos: np.ndarray, quads, *, check_size: bool = True):
     new_pos = np.asarray(new_pos, dtype=float)
     n = len(new_pos)
     gates = MeshQuality.gate_closed_quad_shell(
-        n, new_quads, want_euler=0, check_size=check_size
+        n, new_quads, want_euler=want_euler, check_size=check_size
     )
     V = _vol(new_pos, new_quads)
     if V < 0:
@@ -352,7 +358,335 @@ def subdivide_closed_quads(pos: np.ndarray, quads, *, check_size: bool = True):
     return new_pos, new_quads, V, gates
 
 
-def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: bool = True, skip_tris: bool = False):
+def subdivide_mixed_closed(
+    pos: np.ndarray, quads, tris, *, check_size: bool = False, want_euler: int | None = None
+):
+    """Conforming linear subdivide of a closed quad+tri shell → all-quad.
+
+    Quads 1-to-4 (face point + edge mids). Tris 1-to-3 quads (face point + edge
+    mids). Every edge is split, so there are no hanging nodes. Same rest
+    letter; outline is not Gmsh-remeshed. Used only when unpaired cap/mid
+    tris remain after pairing + even-patch eat.
+    """
+    pos = np.asarray(pos, dtype=float)
+    edge_node = {}
+    new_pos = [pos[i].copy() for i in range(len(pos))]
+
+    def midpoint(a, b):
+        e = (a, b) if a < b else (b, a)
+        if e not in edge_node:
+            edge_node[e] = len(new_pos)
+            new_pos.append(0.5 * (pos[a] + pos[b]))
+        return edge_node[e]
+
+    new_quads = []
+    for q in quads:
+        a, b, c, d = (int(i) for i in q)
+        ab, bc, cd, da = midpoint(a, b), midpoint(b, c), midpoint(c, d), midpoint(d, a)
+        f = len(new_pos)
+        new_pos.append(0.25 * (pos[a] + pos[b] + pos[c] + pos[d]))
+        new_quads.extend(
+            [
+                (a, ab, f, da),
+                (b, bc, f, ab),
+                (c, cd, f, bc),
+                (d, da, f, cd),
+            ]
+        )
+    for t in tris:
+        a, b, c = (int(i) for i in t)
+        ab, bc, ca = midpoint(a, b), midpoint(b, c), midpoint(c, a)
+        f = len(new_pos)
+        new_pos.append((pos[a] + pos[b] + pos[c]) / 3.0)
+        new_quads.extend(
+            [
+                (a, ab, f, ca),
+                (b, bc, f, ab),
+                (c, ca, f, bc),
+            ]
+        )
+    new_pos = np.asarray(new_pos, dtype=float)
+    n = len(new_pos)
+    gates = MeshQuality.gate_closed_quad_shell(
+        n, new_quads, want_euler=want_euler, check_size=check_size
+    )
+    V = _vol(new_pos, new_quads)
+    if V < 0:
+        new_quads = _flip_quads(new_quads)
+        V = _vol(new_pos, new_quads)
+    return new_pos, new_quads, V, gates
+
+
+def _boundary_edges(faces):
+    ecount = defaultdict(int)
+    for f in faces:
+        n = len(f)
+        for k in range(n):
+            a, b = int(f[k]), int(f[(k + 1) % n])
+            ecount[tuple(sorted((a, b)))] += 1
+    return [e for e, c in ecount.items() if c == 1]
+
+
+def _boundary_cycles(bnd):
+    bn = defaultdict(list)
+    for a, b in bnd:
+        bn[a].append(b)
+        bn[b].append(a)
+    unused = set(bn)
+    loops = []
+    while unused:
+        start = next(iter(unused))
+        loop = [start]
+        unused.discard(start)
+        prev = None
+        cur = start
+        while True:
+            nxts = [x for x in bn[cur] if x != prev]
+            if not nxts:
+                break
+            nxt = nxts[0]
+            if nxt == start:
+                break
+            if nxt not in unused:
+                break
+            loop.append(nxt)
+            unused.discard(nxt)
+            prev, cur = cur, nxt
+            if len(loop) > len(bn) + 2:
+                break
+        loops.append(loop)
+    return loops
+
+
+def _tri_xy_area(pos, a, b, c) -> float:
+    p, q, r = pos[a, :2], pos[b, :2], pos[c, :2]
+    return 0.5 * ((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
+
+
+def _quad_xy_ok(pos, q, sign: float) -> bool:
+    a, b, c, d = q
+    a1 = _tri_xy_area(pos, a, b, c)
+    a2 = _tri_xy_area(pos, a, c, d)
+    if a1 * a2 <= 0:
+        return False
+    if abs(a1 + a2) < 1e-16:
+        return False
+    if sign != 0.0 and (a1 + a2) * sign < 0:
+        return False
+    # reject bowties: the other diagonal split should agree
+    b1 = _tri_xy_area(pos, a, b, d)
+    b2 = _tri_xy_area(pos, b, c, d)
+    if b1 * b2 <= 0:
+        return False
+    return True
+
+
+def fill_even_cycle(cycle, pos, sign: float):
+    """Fill an even-boundary planar cycle with quads.
+
+    n=4 → one quad. n>4 → one interior Steiner (centroid) and n/2 quads
+    from paired fan triangles. Boundary edges stay, so neighbors do not
+    pick up hanging nodes. Returns (new_quads, new_xyz or None).
+    """
+    n = len(cycle)
+    if n < 4 or n % 2:
+        raise ValueError(f"cycle n={n} cannot be all-quad")
+    if n == 4:
+        q = tuple(int(i) for i in cycle)
+        if not _quad_xy_ok(pos, q, sign):
+            q = (q[0], q[3], q[2], q[1])
+        if not _quad_xy_ok(pos, q, 0.0):
+            raise ValueError("degenerate 4-cycle")
+        return [q], None
+    xyz = pos[list(cycle)].mean(axis=0)
+    quads = []
+    for i in range(0, n, 2):
+        quads.append(
+            (
+                int(cycle[i]),
+                int(cycle[(i + 1) % n]),
+                int(cycle[(i + 2) % n]),
+                -1,
+            )
+        )
+    a0 = _tri_xy_area(pos, cycle[0], cycle[1], cycle[2])
+    if sign != 0.0 and a0 * sign < 0:
+        quads = [(q[0], q[3], q[2], q[1]) for q in quads]
+    return quads, xyz
+
+
+def eat_even_cap_patches(pos: np.ndarray, quads, leftover):
+    """Reconnect leftover cap ears + adjacent cap quads when the hole is even.
+
+    Does not remesh walls or the midplane outline. Returns (pos, quads, leftover, info).
+    """
+    pos = np.asarray(pos, dtype=float).copy()
+    quads = [tuple(int(i) for i in q) for q in quads]
+    leftover = [tuple(int(i) for i in t) for t in leftover]
+    eaten = 0
+    n_steiners = 0
+    if not leftover:
+        return pos, quads, leftover, {"eaten": 0, "steiners": 0}
+
+    def cap_z(t):
+        return float(np.mean(pos[list(t), 2]))
+
+    def is_cap_at(ids, z0):
+        zs = pos[list(ids), 2]
+        return abs(float(zs.max() - zs.min())) < 1e-8 and abs(float(np.mean(zs)) - z0) < 1e-5
+
+    qedges = defaultdict(list)
+    for qi, q in enumerate(quads):
+        for k in range(4):
+            qedges[tuple(sorted((q[k], q[(k + 1) % 4])))].append(qi)
+    vert2t = defaultdict(list)
+    for ti, t in enumerate(leftover):
+        for v in t:
+            vert2t[v].append(ti)
+    used = set()
+    comps = []
+    for ti in range(len(leftover)):
+        if ti in used:
+            continue
+        stack = [ti]
+        used.add(ti)
+        for cur in stack:
+            for v in leftover[cur]:
+                for j in vert2t[v]:
+                    if j not in used:
+                        used.add(j)
+                        stack.append(j)
+        comps.append(stack)
+
+    drop_quads = set()
+    drop_tris = set()
+    add_quads = []
+    for comp in comps:
+        if drop_tris & set(comp):
+            continue
+        tris = [leftover[i] for i in comp]
+        z0 = cap_z(tris[0])
+        if not all(is_cap_at(t, z0) for t in tris):
+            continue
+        cap_ids = set()
+        for t in tris:
+            for k in range(3):
+                e = tuple(sorted((t[k], t[(k + 1) % 3])))
+                for qi in qedges[e]:
+                    if is_cap_at(quads[qi], z0):
+                        cap_ids.add(qi)
+        if cap_ids & drop_quads:
+            continue
+        faces = tris + [quads[i] for i in cap_ids]
+        bnd = _boundary_edges(faces)
+        if len(bnd) < 4 or len(bnd) % 2:
+            continue
+        loops = _boundary_cycles(bnd)
+        if len(loops) != 1 or len(loops[0]) != len(bnd):
+            continue
+        cycle = loops[0]
+        sign = 0.0
+        patch_area = 0.0
+        for t in tris:
+            sign += _tri_xy_area(pos, t[0], t[1], t[2])
+            patch_area += abs(_tri_xy_area(pos, t[0], t[1], t[2]))
+        for qi in cap_ids:
+            q = quads[qi]
+            patch_area += abs(
+                _tri_xy_area(pos, q[0], q[1], q[2]) + _tri_xy_area(pos, q[0], q[2], q[3])
+            )
+        try:
+            new_q, xyz = fill_even_cycle(cycle, pos, sign)
+        except ValueError:
+            continue
+        tmp_pos = pos
+        if xyz is not None:
+            tmp_pos = np.vstack([pos, np.asarray(xyz, dtype=float).reshape(1, 3)])
+            fid = len(pos)
+            trial = [tuple(fid if v == -1 else v for v in q) for q in new_q]
+        else:
+            trial = new_q
+        fill_area = 0.0
+        for q in trial:
+            fill_area += abs(
+                _tri_xy_area(tmp_pos, q[0], q[1], q[2])
+                + _tri_xy_area(tmp_pos, q[0], q[2], q[3])
+            )
+        if patch_area > 0 and abs(fill_area - patch_area) / patch_area > 0.15:
+            continue
+        if xyz is not None:
+            fid = len(pos)
+            pos = np.vstack([pos, np.asarray(xyz, dtype=float).reshape(1, 3)])
+            new_q = [tuple(fid if v == -1 else v for v in q) for q in new_q]
+            n_steiners += 1
+        drop_quads |= cap_ids
+        drop_tris |= set(comp)
+        add_quads.extend(new_q)
+        eaten += len(tris)
+
+    quads = [q for i, q in enumerate(quads) if i not in drop_quads] + add_quads
+    leftover = [t for i, t in enumerate(leftover) if i not in drop_tris]
+    return pos, quads, leftover, {"eaten": eaten, "steiners": n_steiners}
+
+
+def close_to_all_quad(pos: np.ndarray, quads, leftover, *, want_euler: int | None):
+    """Pair leftovers that can become /SHELL without Gmsh midplane remesh.
+
+    Even-patch eat is skipped when it would change Euler characteristic
+    (letter B through-holes look like even cap cycles; filling them caps genus).
+    Remaining unpaired tris become quads via one conforming mixed 1-to-4.
+    """
+    pos = np.asarray(pos, dtype=float)
+    quads = [tuple(int(i) for i in q) for q in quads]
+    leftover = [tuple(int(i) for i in t) for t in leftover]
+    euler0 = MeshQuality.counts(len(pos), quads, leftover)["euler"]
+    pos_e, quads_e, leftover_e, eat_info = eat_even_cap_patches(pos, quads, leftover)
+    euler1 = MeshQuality.counts(len(pos_e), quads_e, leftover_e)["euler"]
+    if leftover and eat_info["eaten"] and euler1 != euler0:
+        eat_info = {
+            "eaten": 0,
+            "steiners": 0,
+            "skipped": f"even-patch would change euler {euler0}→{euler1}",
+        }
+        note = (
+            f"paired orphans; even-patch skipped (would change euler "
+            f"{euler0}→{euler1} — through-holes stay open)"
+        )
+    else:
+        pos, quads, leftover = pos_e, quads_e, leftover_e
+        note = (
+            f"paired orphans; even-patch ate {eat_info['eaten']} leftover tris"
+            f" (+{eat_info['steiners']} cap Steiners)"
+        )
+    if leftover:
+        n_left = len(leftover)
+        pos, quads, V, gates = subdivide_mixed_closed(
+            pos, quads, leftover, check_size=False, want_euler=want_euler
+        )
+        note += f"; mixed 1-to-4 of remaining {n_left} unpaired tris (no /SH3N)"
+        leftover = []
+        return pos, quads, leftover, V, gates, note
+    V = _vol(np.asarray(pos, dtype=float), quads)
+    if V < 0:
+        quads = _flip_quads(quads)
+        V = -V
+    gates = MeshQuality.gate_closed_quad_shell(
+        len(pos), quads, want_euler=want_euler, check_size=False
+    )
+    return np.asarray(pos, dtype=float), quads, leftover, V, gates, note
+
+
+def dump_bake(
+    path: Path,
+    pos: np.ndarray,
+    quads,
+    *,
+    meta: dict,
+    check_size: bool = True,
+    skip_tris: bool = False,
+    letter: str = "A",
+    want_euler: int | None = 0,
+):
     pos0 = [float(v) for v in np.asarray(pos, dtype=float).ravel()]
     quads = [[int(i) for i in q] for q in quads]
     n = len(pos0) // 3
@@ -370,7 +704,7 @@ def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: boo
             split = BakeJSON.split_tris(quads)
             vol = -vol
     gates = MeshQuality.gate_closed_quad_shell(
-        n, quads, want_euler=0, check_size=check_size
+        n, quads, want_euler=want_euler, check_size=check_size
     )
     payload = {
         "pos0": pos0,
@@ -379,7 +713,7 @@ def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: boo
         "faceTris": [],
         "elemType": "quad",
         "meta": {
-            "letter": "A",
+            "letter": letter,
             "DEPTH": DEPTH,
             "N": n,
             "nQuads": len(quads),
@@ -396,21 +730,30 @@ def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: boo
     return payload["meta"]
 
 
-def ship_closed(repo: Path):
-    mesh = load_mesh(repo / "meshes" / "A.json")
+def ship_closed(repo: Path, letter: str = "A"):
+    mesh = load_mesh(repo / "meshes" / f"{letter}.json")
     pos = np.asarray(mesh["pos"], dtype=float).reshape(-1, 3)
     quads, leftover = quadify_orphans(mesh["quads"], mesh["orphans"])
+    euler0 = MeshQuality.counts(len(pos), quads, leftover)["euler"]
+    want_euler = 0 if letter == "A" else euler0
+    if letter == "A":
+        if leftover:
+            raise SystemExit(f"ship still has {len(leftover)} unpaired tris")
+        if mesh["n"] != SHIP_N:
+            raise SystemExit(f"ship N={mesh['n']} want {SHIP_N}")
+        V = enclosed_volume(mesh["pos"], quads, [])
+        gates = MeshQuality.gate_closed_quad_shell(len(pos), quads, want_euler=0)
+        return pos, quads, V, gates, mesh, "ship meshes/A.json (quadify orphan caps; midplane not remeshed)"
+    pos, quads, leftover, V, gates, note = close_to_all_quad(
+        pos, quads, leftover, want_euler=want_euler
+    )
     if leftover:
-        raise SystemExit(f"ship still has {len(leftover)} unpaired tris")
-    if mesh["n"] != SHIP_N:
-        raise SystemExit(f"ship N={mesh['n']} want {SHIP_N}")
-    V = enclosed_volume(mesh["pos"], quads, [])
-    gates = MeshQuality.gate_closed_quad_shell(len(pos), quads, want_euler=0)
-    return pos, quads, V, gates, mesh
+        raise SystemExit(f"letter {letter} still has {len(leftover)} unpaired tris")
+    return pos, quads, V, gates, mesh, note
 
 
-def build_coarse(repo: Path):
-    pos, quads, _V, _gates, _mesh = ship_closed(repo)
+def build_coarse(repo: Path, letter: str = "A"):
+    pos, quads, _V, _gates, _mesh, _note = ship_closed(repo, letter)
     _front_q, loops, _zmax = extract_front_midplane(pos, quads)
     raw = [[tuple(pos[i, :2]) for i in L] for L in loops]
     last_err = None
@@ -427,7 +770,7 @@ def build_coarse(repo: Path):
             last_err = ValueError(f"coarse N={n} not in [400, {SHIP_N})")
             continue
         meta = {
-            "plan": "Gmsh DelQuad remesh of ship A outline + prism walls",
+            "plan": f"Gmsh DelQuad remesh of ship {letter} outline + prism walls",
             "role": "coarse",
             "lc": trial["lc"],
             "nz": trial["nz"],
@@ -436,21 +779,23 @@ def build_coarse(repo: Path):
             "nMid": len(pos0) // 3,
             "nMidQuads": len(mid_q),
             "midFreeEdges": g2["freeEdges"],
-            "note": "all-quad /SHELL study mesh; does not replace ship meshes/A.json",
+            "note": f"all-quad /SHELL study mesh; does not replace ship meshes/{letter}.json",
         }
         return epos, equads, eV, egates, meta
     raise SystemExit(f"no all-quad coarse trial worked: {last_err}")
 
 
-def build_fine(repo: Path):
-    pos, quads, V0, _gates, _mesh = ship_closed(repo)
-    epos, equads, eV, egates = subdivide_closed_quads(pos, quads)
+def build_fine(repo: Path, letter: str = "A", want_euler: int | None = 0):
+    pos, quads, V0, _gates, _mesh, _note = ship_closed(repo, letter)
+    epos, equads, eV, egates = subdivide_closed_quads(
+        pos, quads, check_size=(letter == "A"), want_euler=want_euler
+    )
     meta = {
         "plan": "linear 1-to-4 of closed all-quad ship shell (nested 2× h; N×4 on a surface)",
         "role": "fine",
-        "parentN": SHIP_N,
+        "parentN": int(len(pos)),
         "parentV0_m3": V0,
-        "note": "all-quad /SHELL study mesh; does not replace ship meshes/A.json",
+        "note": f"all-quad /SHELL study mesh; does not replace ship meshes/{letter}.json",
     }
     return epos, equads, eV, egates, meta
 
@@ -463,22 +808,30 @@ def load_closed_bake(path: Path):
     return pos, quads, V, data.get("meta") or {}
 
 
-def build_finer_from_fine(pos: np.ndarray, quads, V0: float):
+def build_finer_from_fine(
+    pos: np.ndarray, quads, V0: float, *, letter: str = "A", want_euler: int | None = 0
+):
     """Nested 1-to-4 of the fine all-quad shell (N×4 vs fine; 16× ship quads)."""
-    epos, equads, eV, egates = subdivide_closed_quads(pos, quads, check_size=False)
+    epos, equads, eV, egates = subdivide_closed_quads(
+        pos, quads, check_size=False, want_euler=want_euler
+    )
     meta = {
         "plan": "linear 1-to-4 of closed all-quad fine shell (nested 2× h of fine; N=4×fine)",
         "role": "finer",
         "parentN": int(len(pos)),
         "parentV0_m3": float(V0),
-        "note": "all-quad /SHELL study mesh; exceeds web bake MAX_VERTS; does not replace ship meshes/A.json",
+        "note": f"all-quad /SHELL study mesh; exceeds web bake MAX_VERTS; does not replace ship meshes/{letter}.json",
     }
     return epos, equads, eV, egates, meta
 
 
-def build_finest_from_finer(pos: np.ndarray, quads, V0: float):
+def build_finest_from_finer(
+    pos: np.ndarray, quads, V0: float, *, letter: str = "A", want_euler: int | None = 0
+):
     """Nested 1-to-4 of the finer all-quad shell (N=4×finer; same rest letter)."""
-    epos, equads, eV, egates = subdivide_closed_quads(pos, quads, check_size=False)
+    epos, equads, eV, egates = subdivide_closed_quads(
+        pos, quads, check_size=False, want_euler=want_euler
+    )
     meta = {
         "plan": "linear 1-to-4 of closed all-quad finer shell (nested 2× h of finer; N=4×finer)",
         "role": "finest",
@@ -493,64 +846,112 @@ def generate(
     repo: Path,
     out_dir: Path,
     *,
+    letter: str = "A",
     finer_only: bool = False,
     include_finer: bool = False,
     finest_only: bool = False,
     include_finest: bool = False,
+    include_coarse: bool | None = None,
 ) -> dict:
+    letter = letter.upper()
+    if letter not in ("A", "B", "C"):
+        raise SystemExit(f"letter must be A, B, or C, got {letter}")
+    want_euler: int | None = 0 if letter == "A" else None  # B/C: ship_closed sets bake euler
+    if include_coarse is None:
+        include_coarse = letter == "A"
+    if letter in ("B", "C"):
+        include_finest = False
+        finest_only = False
+        if not finer_only:
+            include_finer = True
     mesh_dir = out_dir / "meshes"
     mesh_dir.mkdir(parents=True, exist_ok=True)
     summary_path = out_dir / "mesh-summary.json"
     summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
+    summary["letter"] = letter
+    dump_kw = {"letter": letter, "want_euler": want_euler}
 
     if not finer_only and not finest_only:
-        cpos, cquads, cV, _cg, cmeta = build_coarse(repo)
-        cmeta_out = dump_bake(mesh_dir / "A-coarse.json", cpos, cquads, meta=cmeta)
+        if include_coarse:
+            cpos, cquads, cV, _cg, cmeta = build_coarse(repo, letter)
+            cmeta_out = dump_bake(
+                mesh_dir / f"{letter}-coarse.json", cpos, cquads, meta=cmeta, **dump_kw
+            )
+            summary["coarse"] = {**cmeta_out, "V0_mL": cV * 1e6}
 
-        pos, quads, sV, _sg, smesh = ship_closed(repo)
+        pos, quads, sV, sg, smesh, snote = ship_closed(repo, letter)
+        if want_euler is None:
+            want_euler = int(sg["euler"])
+            dump_kw["want_euler"] = want_euler
         smeta = {
-            "plan": "ship meshes/A.json (quadify orphan caps; midplane not remeshed)",
+            "plan": (
+                f"ship meshes/{letter}.json (quadify orphan caps; midplane not remeshed)"
+                if letter == "A"
+                else f"ship meshes/{letter}.json — {snote}"
+            ),
             "role": "ship",
-            "source": "meshes/A.json",
+            "source": f"meshes/{letter}.json",
             "nQuads_src": len(smesh["quads"]),
             "nOrphanCapTris": len(smesh["orphans"]),
-            "note": "locked Design-PASS bake; A-LOCK.md — do not overwrite meshes/A.json",
+            "close": snote,
+            "note": f"locked Design-PASS bake; do not overwrite meshes/{letter}.json",
         }
-        smeta_out = dump_bake(mesh_dir / "A-ship.json", pos, quads, meta=smeta)
+        smeta_out = dump_bake(
+            mesh_dir / f"{letter}-ship.json", pos, quads, meta=smeta, **dump_kw
+        )
 
-        fpos, fquads, fV, _fg, fmeta = build_fine(repo)
-        fmeta_out = dump_bake(mesh_dir / "A-fine.json", fpos, fquads, meta=fmeta)
+        fpos, fquads, fV, _fg, fmeta = build_fine(repo, letter, want_euler=want_euler)
+        skip_fine_tris = len(fpos) > MeshQuality.MAX_VERTS
+        fmeta_out = dump_bake(
+            mesh_dir / f"{letter}-fine.json",
+            fpos,
+            fquads,
+            meta=fmeta,
+            check_size=False,
+            skip_tris=skip_fine_tris,
+            **dump_kw,
+        )
 
         summary.update({
-            "coarse": {**cmeta_out, "V0_mL": cV * 1e6},
             "ship": {**smeta_out, "V0_mL": sV * 1e6},
             "fine": {**fmeta_out, "V0_mL": fV * 1e6},
         })
 
     if (include_finer or finer_only) and not finest_only:
-        fine_path = mesh_dir / "A-fine.json"
+        fine_path = mesh_dir / f"{letter}-fine.json"
         if not fine_path.exists():
-            raise SystemExit("A-fine.json missing — run without --finer-only first")
+            raise SystemExit(f"{letter}-fine.json missing — run without --finer-only first")
         fpos, fquads, fV, _fmeta = load_closed_bake(fine_path)
-        xpos, xquads, xV, _xg, xmeta = build_finer_from_fine(fpos, fquads, fV)
+        xpos, xquads, xV, _xg, xmeta = build_finer_from_fine(
+            fpos, fquads, fV, letter=letter, want_euler=want_euler
+        )
         xmeta_out = dump_bake(
-            mesh_dir / "A-finer.json", xpos, xquads, meta=xmeta, check_size=False
+            mesh_dir / f"{letter}-finer.json",
+            xpos,
+            xquads,
+            meta=xmeta,
+            check_size=False,
+            skip_tris=True,
+            **dump_kw,
         )
         summary["finer"] = {**xmeta_out, "V0_mL": xV * 1e6}
 
     if include_finest or finest_only:
-        finer_path = mesh_dir / "A-finer.json"
+        finer_path = mesh_dir / f"{letter}-finer.json"
         if not finer_path.exists():
-            raise SystemExit("A-finer.json missing — run --finer-only first")
+            raise SystemExit(f"{letter}-finer.json missing — run --finer-only first")
         xpos, xquads, xV, _xmeta = load_closed_bake(finer_path)
-        zpos, zquads, zV, _zg, zmeta = build_finest_from_finer(xpos, xquads, xV)
+        zpos, zquads, zV, _zg, zmeta = build_finest_from_finer(
+            xpos, xquads, xV, letter=letter, want_euler=want_euler
+        )
         zmeta_out = dump_bake(
-            mesh_dir / "A-finest.json",
+            mesh_dir / f"{letter}-finest.json",
             zpos,
             zquads,
             meta=zmeta,
             check_size=False,
             skip_tris=True,
+            **dump_kw,
         )
         summary["finest"] = {**zmeta_out, "V0_mL": zV * 1e6}
 
@@ -558,18 +959,23 @@ def generate(
         "LAW42 μ1=MU α1=2 ρ=1130 H0 Gapmin=CONTACT_KISS Ishell=1 /ADYREL — not retuned"
     )
     summary["metrics"] = (
-        "Chiron/Themis 2026-09-11: at first λ_max≥2 report p, λ_max, V, Ψ; "
-        "Δp≤5% ΔV≤5% Δλ_max≤2% on successive ~2× N; λ_max in [2.0, 2.35]; Ψ≥0; "
-        "contact report-only; dynamic until QS-ish; Quality PASS desk; "
-        "converged dynamic ≠ ABC apples"
+        "Mike 2026-09-12 same-load: at ~32.5 kPa and ~35.8 kPa report N, λ_max, λ_aw, V, Ψ; "
+        "ΔV≤5% Δλ_max≤2% Δλ_aw≤2% on successive nested N; peak λ_max at holes/creases is a "
+        "sharp-hole singularity — do not chase with global refine. Volume/λ_aw is the signal. "
+        "Ψ≥0; contact report-only; dynamic until QS-ish; converged dynamic ≠ ABC apples"
     )
     summary_path.write_text(json.dumps(summary, indent=2) + "\n")
     for key in ("coarse", "ship", "fine", "finer", "finest"):
         if key in summary and isinstance(summary[key], dict) and "N" in summary[key]:
             print("{k:6s} N={N} quads={nQuads} V0={V0_mL:.4g} mL".format(k=key, **summary[key]))
-    ns = [summary[k]["N"] for k in ("coarse", "ship", "fine") if k in summary]
-    if len(ns) == 3 and not (ns[0] < ns[1] < ns[2]):
-        raise SystemExit("densities are not coarse < ship < fine")
+    if include_coarse:
+        ns = [summary[k]["N"] for k in ("coarse", "ship", "fine") if k in summary]
+        if len(ns) == 3 and not (ns[0] < ns[1] < ns[2]):
+            raise SystemExit("densities are not coarse < ship < fine")
+    else:
+        ns = [summary[k]["N"] for k in ("ship", "fine") if k in summary]
+        if len(ns) == 2 and not (ns[0] < ns[1]):
+            raise SystemExit("densities are not ship < fine")
     if "finer" in summary and "fine" in summary:
         if not (summary["fine"]["N"] < summary["finer"]["N"]):
             raise SystemExit("finer is not denser than fine")
@@ -582,26 +988,29 @@ def generate(
 def main(argv=None) -> int:
     repo = _TOOLS.parent
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out-dir", type=Path, default=repo / "radioss" / "A-refine")
+    ap.add_argument("--letter", choices=("A", "B", "C"), default="A")
+    ap.add_argument("--out-dir", type=Path, default=None)
     ap.add_argument(
         "--finer-only",
         action="store_true",
-        help="1-to-4 of existing A-fine.json only; do not remesh coarse/ship/fine",
+        help="1-to-4 of existing {L}-fine.json only; do not remesh ship/fine",
     )
     ap.add_argument(
         "--with-finer",
         action="store_true",
-        help="also write nested finer (N=4×fine) after the coarse/ship/fine ladder",
+        help="also write nested finer (N=4×fine) after the ship/fine ladder",
     )
     ap.add_argument(
         "--finest-only",
         action="store_true",
-        help="1-to-4 of existing A-finer.json only; do not remesh lower rungs",
+        help="1-to-4 of existing {L}-finer.json only; letter A only (B/C do not run finest)",
     )
     args = ap.parse_args(argv)
+    out_dir = args.out_dir or (repo / "radioss" / f"{args.letter}-refine")
     generate(
         repo,
-        args.out_dir,
+        out_dir,
+        letter=args.letter,
         finer_only=args.finer_only,
         include_finer=args.with_finer or args.finer_only,
         finest_only=args.finest_only,
