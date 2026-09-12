@@ -25,6 +25,38 @@ if str(_TOOLS) not in sys.path:
 from mesh_to_radioss import ANIM_DT, P_MAX, T_RAMP, RUNNAME, load_mesh, quadify_orphans
 from radioss_law import CONTACT_KISS, H0, MU, RHO, WARN_LAM, law_card_lines
 
+
+def _finite_or_none(v):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
+
+
+def load_deck_meta(deck_dir: Path) -> dict:
+    p = deck_dir / "deck-meta.json"
+    if not p.exists():
+        return {
+            "P_MAX": P_MAX,
+            "T_RAMP": T_RAMP,
+            "T_END": 0.05,
+            "ANIM_DT": ANIM_DT,
+            "RUNNAME": RUNNAME,
+            "ams": False,
+        }
+    return json.loads(p.read_text())
+
 try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
@@ -191,12 +223,12 @@ def enclosed_volume(x, cover):
     return v
 
 
-def pressure_at(t: float) -> float:
+def pressure_at(t: float, *, p_max: float = P_MAX, t_ramp: float = T_RAMP) -> float:
     if t <= 0:
         return 0.0
-    if t >= T_RAMP:
-        return P_MAX
-    return P_MAX * (t / T_RAMP)
+    if t >= t_ramp:
+        return p_max
+    return p_max * (t / t_ramp)
 
 
 def adjacency(n, quads, orphans):
@@ -261,14 +293,12 @@ def contact_gap(x, Xrest, cover, ring2):
     return min_u, min_s, punch
 
 
-def convert_anim(run_dir: Path, anim_bin: str) -> list[Path]:
-    anims = sorted(p for p in run_dir.iterdir() if p.name.startswith(f"{RUNNAME}A") and p.is_file())
+def convert_anim(run_dir: Path, anim_bin: str, runname: str = RUNNAME) -> list[Path]:
+    anims = sorted(p for p in run_dir.iterdir() if p.name.startswith(f"{runname}A") and p.is_file())
     vtks = []
     for anim in anims:
-        tag = anim.name[len(RUNNAME) + 1 :]  # A001 → wait name is AinflateA001
-        # AinflateA001 → after RUNNAME "A001"
-        suffix = anim.name[len(RUNNAME) :]  # A001
-        vtk = run_dir / f"{RUNNAME}_{suffix}.vtk"
+        suffix = anim.name[len(runname) :]  # A001
+        vtk = run_dir / f"{runname}_{suffix}.vtk"
         if not vtk.exists() or vtk.stat().st_size < 100:
             with vtk.open("w") as out:
                 r = subprocess.run([anim_bin, str(anim)], stdout=out, stderr=subprocess.PIPE, text=True)
@@ -293,20 +323,43 @@ def look_font(size: int):
     return ImageFont.load_default()
 
 
-def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
-    """Orthographic +Z view, Y up. Fill + stroke **quads** (no diagonal bleed)."""
+def render_frame(
+    x,
+    quads,
+    lams_quad,
+    hud,
+    size=720,
+    warn=False,
+    camera=None,
+    draw_edges=True,
+    project=None,
+    rest_fill=None,
+    warn_label="WARN  first λ_max ≥ 2",
+    extra_edges=None,
+):
+    """Orthographic +Z view (or `project`), Y up. Fill + stroke **quads**."""
     w = h = size
     img = np.zeros((h, w, 3), dtype=np.uint8)
     img[:] = (18, 18, 22)
-    xy = x[:, :2]
-    xmin, ymin = xy.min(axis=0)
-    xmax, ymax = xy.max(axis=0)
-    span = max(xmax - xmin, ymax - ymin, 1e-6) * 1.18
-    cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
+
+    def xy_of(p):
+        if project is None:
+            return float(p[0]), float(p[1])
+        return project(p)
+
+    xy = np.asarray([xy_of(p) for p in x], dtype=np.float64)
+    if camera is not None:
+        cx, cy, span = (float(camera[0]), float(camera[1]), float(camera[2]))
+    else:
+        xmin, ymin = xy.min(axis=0)
+        xmax, ymax = xy.max(axis=0)
+        span = max(xmax - xmin, ymax - ymin, 1e-6) * 1.18
+        cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
 
     def to_px(p):
-        px = (p[0] - cx) / span * (w * 0.92) + w * 0.5
-        py = h * 0.5 - (p[1] - cy) / span * (h * 0.92)
+        u, v = xy_of(p)
+        px = (u - cx) / span * (w * 0.92) + w * 0.5
+        py = h * 0.5 - (v - cy) / span * (h * 0.92)
         return px, py
 
     faces = []
@@ -321,20 +374,29 @@ def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
         return tuple(int(c0[k] + (c1[k] - c0[k]) * t) for k in range(3))
 
     edge = (52, 52, 60)
+    beige = rest_fill if rest_fill is not None else None
     for zc, fi, q in faces:
-        lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
-        t = (lam - 1.0) / max(WARN_LAM - 1.0, 1e-6)
-        col = lerp((210, 210, 214), (196, 72, 28), t)
+        if beige is not None:
+            col = beige
+        else:
+            lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
+            t = (lam - 1.0) / max(WARN_LAM - 1.0, 1e-6)
+            col = lerp((210, 210, 214), (196, 72, 28), t)
         # same color on both CST halves so the diagonal does not read as a tri mesh
         _fill_tri(img, [to_px(x[q[0]]), to_px(x[q[1]]), to_px(x[q[2]])], col)
         _fill_tri(img, [to_px(x[q[0]]), to_px(x[q[2]]), to_px(x[q[3]])], col)
 
     pil = Image.fromarray(img, "RGB")
     draw = ImageDraw.Draw(pil)
-    for zc, fi, q in faces:
-        pts = [to_px(x[q[i]]) for i in range(4)]
-        ring = pts + [pts[0]]
-        draw.line(ring, fill=edge, width=1)
+    if draw_edges:
+        for zc, fi, q in faces:
+            pts = [to_px(x[q[i]]) for i in range(4)]
+            ring = pts + [pts[0]]
+            draw.line(ring, fill=edge, width=1)
+    if extra_edges:
+        feat = (38, 38, 44) if rest_fill is not None else (58, 58, 66)
+        for a, b in extra_edges:
+            draw.line([to_px(x[int(a)]), to_px(x[int(b)])], fill=feat, width=1)
     font = look_font(18)
     font_b = look_font(22)
     y = 10
@@ -343,7 +405,7 @@ def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
         y += 22
     if warn:
         draw.rectangle([10, h - 48, w - 10, h - 12], outline=(220, 90, 40), width=2)
-        draw.text((18, h - 44), "WARN  first λ_max ≥ 2", fill=(255, 200, 140), font=font_b)
+        draw.text((18, h - 44), warn_label, fill=(255, 200, 140), font=font_b)
     return pil
 
 
@@ -419,8 +481,55 @@ def ffmpeg_encode(frames_dir: Path, gif: Path, mp4: Path, nframes: int | None = 
         )
 
 
-def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None):
-    lines = ["# A-inflate first light — RUN", ""]
+def lambda_field_stats(X, x, quads):
+    """Area-weighted λ stats on quads (max of two CST halves per quad)."""
+    lams = []
+    areas = []
+    for q in quads:
+        m = 1.0
+        a_sum = 0.0
+        for tri in ((q[0], q[1], q[2]), (q[0], q[2], q[3])):
+            lam1, lam2, A0, *_ = tri_stretch(X[list(tri)], x[list(tri)])
+            m = max(m, lam1, lam2)
+            a_sum += A0
+        lams.append(m)
+        areas.append(max(a_sum, 1e-18))
+    lams = np.asarray(lams, dtype=np.float64)
+    areas = np.asarray(areas, dtype=np.float64)
+    if len(lams) == 0:
+        return {
+            "lam_max": 1.0,
+            "lam_min": 1.0,
+            "lam_mean": 1.0,
+            "lam_aw_mean": 1.0,
+            "lam_p50": 1.0,
+            "lam_p90": 1.0,
+            "lam_p99": 1.0,
+            "n_quads": 0,
+        }
+    order = np.argsort(lams)
+    ls, w = lams[order], areas[order]
+    cw = np.cumsum(w)
+    cw = cw / cw[-1]
+
+    def pct(p):
+        return float(ls[np.searchsorted(cw, p / 100.0, side="left").clip(0, len(ls) - 1)])
+
+    aw_mean = float(np.sum(lams * areas) / np.sum(areas))
+    return {
+        "lam_max": float(lams.max()),
+        "lam_min": float(lams.min()),
+        "lam_mean": float(lams.mean()),
+        "lam_aw_mean": aw_mean,
+        "lam_p50": pct(50),
+        "lam_p90": pct(90),
+        "lam_p99": pct(99),
+        "n_quads": int(len(lams)),
+    }
+
+
+def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None, title=None):
+    lines = [title or "# A-inflate first light — RUN", ""]
     lines.append("Cloud VM job. OpenRadioss linux64_gf (`latest-20260728`). SI deck. **μ and ρ not retuned.**")
     lines.append("")
     lines.append("## Law card dump")
@@ -549,7 +658,20 @@ def main(argv=None) -> int:
     ap.add_argument("--run-dir", type=Path, default=repo / "radioss" / "A-inflate" / "run")
     ap.add_argument("--deck-dir", type=Path, default=repo / "radioss" / "A-inflate")
     ap.add_argument("--mesh", type=Path, default=repo / "meshes" / "A.json")
+    ap.add_argument("--label", type=str, default=None)
+    ap.add_argument(
+        "--metrics-only",
+        action="store_true",
+        help="skip O(n²) contact_gap, per-frame PNG, and GIF (large-N refine). Still writes warn.json.",
+    )
     args = ap.parse_args(argv)
+
+    meta = load_deck_meta(args.deck_dir)
+    runname = meta.get("RUNNAME", RUNNAME)
+    anim_dt = float(meta.get("ANIM_DT", ANIM_DT))
+    p_max = float(meta.get("P_MAX", P_MAX))
+    t_ramp = float(meta.get("T_RAMP", T_RAMP))
+    ams = bool(meta.get("ams"))
 
     art = args.deck_dir / "artifacts"
     frames_dir = art / "frames"
@@ -557,11 +679,12 @@ def main(argv=None) -> int:
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     anim_bin = os.environ.get("ANIM_TO_VTK", "anim_to_vtk_linux64_gf")
-    vtks = convert_anim(args.run_dir, anim_bin)
+    vtks = convert_anim(args.run_dir, anim_bin, runname=runname)
     if not vtks:
-        vtks = sorted(args.run_dir.glob(f"{RUNNAME}_A*.vtk"))
+        vtks = sorted(args.run_dir.glob(f"{runname}_A*.vtk"))
         vtks = [p for p in vtks if p.stat().st_size > 100]
     vtks = sorted(vtks, key=lambda p: p.name)
+    title = args.label or "# A-inflate first light — RUN"
     if not vtks:
         print("no VTK/ANIM frames", file=sys.stderr)
         write_run_md(
@@ -571,6 +694,7 @@ def main(argv=None) -> int:
             ["No ANIM/VTK frames — engine did not produce animation, or anim_to_vtk missing."]
             + scan_logs(args.run_dir),
             [],
+            title=title,
         )
         return 2
 
@@ -583,24 +707,35 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
     print(f"ANIM cells: {len(quads)} quads, {len(orphans)} tris")
-    ring2 = adjacency(len(X), quads, orphans)
+    metrics_only = bool(args.metrics_only) or len(quads) > 8000
+    ring2 = None if metrics_only else adjacency(len(X), quads, orphans)
+    if metrics_only:
+        print("metrics-only: skip contact_gap + per-frame PNG/GIF (Chiron/Themis p/λ/V/Ψ still written)")
 
     rows = []
     warn_row = None
+    warn_field = None
     last_img = None
+    last_field = None
+    snap_x = None
+    snap_lams = None
     for fi, vtk in enumerate(vtks):
         pts, cells, time = parse_vtk(vtk)
         x = np.asarray(pts, dtype=np.float64)
         if time is None:
             digits = "".join(ch for ch in vtk.stem if ch.isdigit())
             idx = int(digits) if digits else fi
-            time = max(0, idx - 1) * ANIM_DT
+            time = max(0, idx - 1) * anim_dt
         lam_max, Psi, nneg = metrics_frame(X, x, quads, orphans)
         V = enclosed_volume(x, cover)
-        gap_u, min_s, punch = contact_gap(x, X, cover, ring2)
-        if V < 0:
-            punch = True
-        p = pressure_at(time)
+        if metrics_only:
+            gap_u, min_s = float("nan"), float("nan")
+            punch = bool(V < 0)
+        else:
+            gap_u, min_s, punch = contact_gap(x, X, cover, ring2)
+            if V < 0:
+                punch = True
+        p = pressure_at(time, p_max=p_max, t_ramp=t_ramp)
         row = {
             "frame": fi,
             "file": vtk.name,
@@ -619,30 +754,98 @@ def main(argv=None) -> int:
             "n_tris": len(orphans),
         }
         rows.append(row)
+        gap_txt = "n/a" if metrics_only else f"{row['gap_mm']:.3g} mm"
         print(
             f"frame {fi:03d} t={time:.4g}s  p={p:.4g} Pa  λ_max={lam_max:.4f}  "
-            f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={row['gap_mm']:.3g} mm  punch={punch}"
+            f"V={V*1e6:.4g} mL  Ψ={Psi:.4g} J  gap={gap_txt}  punch={punch}"
         )
-        lams = quad_lams(X, x, quads)
-        hud = [
-            f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
-            f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",
-            f"Ψ = {Psi:.4g} J   quads={len(quads)} SH3N={len(orphans)}  /ADYREL",
-        ]
+        field = lambda_field_stats(X, x, quads)
+        last_field = field
         is_warn = lam_max >= WARN_LAM and warn_row is None
-        img = render_frame(x, quads, lams, hud, warn=is_warn or (warn_row is not None and fi == warn_row["frame"]))
-        png = frames_dir / f"frame_{fi:04d}.png"
-        img.save(png)
-        last_img = png
+        if not metrics_only:
+            lams = quad_lams(X, x, quads)
+            hud = [
+                f"OpenRadioss A  frame {fi}  t={time*1e3:.3g} ms",
+                f"p = {p:.0f} Pa   λ_max = {lam_max:.3f}   V = {V*1e6:.1f} mL",
+                f"Ψ = {Psi:.4g} J   quads={len(quads)} SH3N={len(orphans)}  /ADYREL",
+            ]
+            img = render_frame(
+                x, quads, lams, hud,
+                warn=is_warn or (warn_row is not None and fi == warn_row["frame"]),
+            )
+            png = frames_dir / f"frame_{fi:04d}.png"
+            img.save(png)
+            last_img = png
+            if is_warn:
+                img.save(art / "warn-lambda2.png")
+        elif is_warn or warn_row is None:
+            snap_x = x
         if is_warn:
             warn_row = row
-            img.save(art / "warn-lambda2.png")
+            warn_field = field
+            if metrics_only:
+                snap_lams = quad_lams(X, x, quads)
+                snap_x = x
 
     with (art / "metrics.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
-    (art / "metrics.json").write_text(json.dumps(rows, indent=2))
+    (art / "metrics.json").write_text(json.dumps(_json_safe(rows), indent=2) + "\n")
+
+    blockers_early = scan_logs(args.run_dir)
+    stop_fired = any("NODA/STOP" in b or "NODAL TIME STEP LESS" in b for b in blockers_early)
+    cfl_before = warn_row is None and stop_fired
+    cfl_after = warn_row is not None and stop_fired
+    warn_payload = {
+        "reached_lambda2": warn_row is not None,
+        "cfl_before_lambda2": bool(cfl_before),
+        "cfl_after_lambda2": bool(cfl_after),
+        "dynamic": True,
+        "ams": ams,
+        "n_quads": len(quads),
+        "n_tris": len(orphans),
+        "Ishell": 1,
+        "MU": MU,
+        "RHO": RHO,
+        "label": "dynamic PLOAD + /ADYREL (not Chiron QS; converged dynamic ≠ ABC apples)",
+        "metrics_only": metrics_only,
+    }
+    src = warn_row or (rows[-1] if rows else None)
+    if src:
+        warn_payload.update(
+            {
+                "frame": src["frame"],
+                "t": src["t"],
+                "p_Pa": src["p_Pa"],
+                "lam_max": src["lam_max"],
+                "V_mL": src["V_mL"],
+                "Psi_J": src["Psi_J"],
+                "gap_mm": _finite_or_none(src.get("gap_mm")),
+                "punch": src["punch"],
+                "Psi_neg_elems": src["Psi_neg_elems"],
+            }
+        )
+    field = warn_field or last_field
+    if field:
+        warn_payload["lambda_field"] = field
+    (art / "warn.json").write_text(json.dumps(_json_safe(warn_payload), indent=2) + "\n")
+    if field:
+        (art / "lambda_field.json").write_text(json.dumps(field, indent=2) + "\n")
+
+    if metrics_only and snap_x is not None:
+        src_row = warn_row or (rows[-1] if rows else None)
+        if src_row is not None:
+            lams = snap_lams if snap_lams is not None else quad_lams(X, snap_x, quads)
+            hud = [
+                f"OpenRadioss A  frame {src_row['frame']}  t={src_row['t']*1e3:.3g} ms",
+                f"p = {src_row['p_Pa']:.0f} Pa   λ_max = {src_row['lam_max']:.3f}   V = {src_row['V_mL']:.1f} mL",
+                f"Ψ = {src_row['Psi_J']:.4g} J   quads={len(quads)}  metrics-only /ADYREL",
+            ]
+            img = render_frame(snap_x, quads, lams, hud, warn=warn_row is not None)
+            png = art / ("warn-lambda2.png" if warn_row is not None else "last-frame.png")
+            img.save(png)
+            last_img = png
 
     if warn_row is None and last_img:
         dest = art / "last-frame.png"
@@ -650,23 +853,34 @@ def main(argv=None) -> int:
 
     gif = art / "A-inflate.gif"
     mp4 = art / "A-inflate.mp4"
-    # GIF/MP4: rest → past λ≥2; drop the CFL blow-up frame (λ tens, V litres).
-    gif_end = len(rows)
-    for r in rows:
-        if r["lam_max"] > 8.0 or r["V_mL"] > 20.0 * max(rows[0]["V_mL"], 1.0):
-            gif_end = r["frame"]
-            break
-    gif_end = max(gif_end, (warn_row["frame"] + 1) if warn_row else 1)
-    ffmpeg_encode(frames_dir, gif, mp4, nframes=gif_end)
+    if not metrics_only:
+        gif_end = len(rows)
+        for r in rows:
+            if r["lam_max"] > 8.0 or r["V_mL"] > 20.0 * max(rows[0]["V_mL"], 1.0):
+                gif_end = r["frame"]
+                break
+        gif_end = max(gif_end, (warn_row["frame"] + 1) if warn_row else 1)
+        ffmpeg_encode(frames_dir, gif, mp4, nframes=gif_end)
 
     blockers = scan_logs(args.run_dir)
     extra = []
-    extra.append("Natural CFL ~2.3e-5 s (Belytschko N=1, 1554 quads). `/DT/NODA/STOP 0.9 1e-6` ends the run at collapse (~28 ms) instead of hanging at dt~1e-15.")
-    extra.append("Try-first QEPH (Ishell=24)+Ismstr=10 ruptured at rest. Working first light: Belytschko Ishell=1, Ismstr=10, N=1.")
-    extra.append("No `/AMS`. μ and ρ unchanged. `/ADYREL` damps the explicit tape (first λ≥2 later than undamped 3-2-1 first light; still dynamic, not Chiron QS).")
+    extra.append(
+        f"Belytschko N=1, {len(quads)} quads. `/DT/NODA/STOP 0.9 1e-6` hang guard "
+        f"(not NODA/CST). {'/AMS on (Kareem fork).' if ams else 'No /AMS on this tape.'}"
+    )
+    extra.append("Working PROP: Belytschko Ishell=1, Ismstr=10, N=1. μ and ρ unchanged.")
+    extra.append(
+        "Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. "
+        "Quality PASS desk; converged dynamic ≠ ABC apples claim vs Chiron QS."
+    )
+    if metrics_only:
+        extra.append(
+            "Post is **metrics-only**: contact gap skipped (report-only anyway); "
+            "no per-frame PNG/GIF. p, λ_max, V, Ψ at first λ≥2 are still in warn.json."
+        )
     if orphans:
         extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
-    if not gif.exists() and not mp4.exists():
+    if not metrics_only and not gif.exists() and not mp4.exists():
         extra.append("ffmpeg GIF/MP4 encode failed — PNG frames are in artifacts/frames/")
     write_run_md(
         args.deck_dir / "RUN.md",
@@ -675,6 +889,7 @@ def main(argv=None) -> int:
         blockers,
         extra,
         mesh_note=f"{len(quads)} quads, {len(orphans)} tris",
+        title=title,
     )
     print(f"wrote {args.deck_dir / 'RUN.md'}")
     print(f"warn frame: {warn_row['frame'] if warn_row else 'NOT REACHED'}")

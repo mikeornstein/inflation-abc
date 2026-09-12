@@ -176,7 +176,16 @@ def enclosed_volume(pos, quads, orphans) -> float:
     return v
 
 
-def write_starter(mesh: dict, out: Path) -> dict:
+def write_starter(
+    mesh: dict,
+    out: Path,
+    *,
+    t_ramp: float | None = None,
+    t_end: float | None = None,
+    p_max: float | None = None,
+    ams: bool = False,
+    note: str | None = None,
+) -> dict:
     n = mesh["n"]
     pos = mesh["pos"]
     src_quads = mesh["quads"]
@@ -190,6 +199,9 @@ def write_starter(mesh: dict, out: Path) -> dict:
     vol_q = enclosed_volume(pos, quads, [])
     if abs(vol_q - vol0) > 1e-12 * max(abs(vol0), 1e-12):
         raise SystemExit(f"quadify changed V0: {vol0} → {vol_q}")
+    t_ramp = T_RAMP if t_ramp is None else float(t_ramp)
+    t_end = T_END if t_end is None else float(t_end)
+    p_max = P_MAX if p_max is None else float(p_max)
     info = {
         "n": n,
         "nquads": len(quads),
@@ -205,9 +217,12 @@ def write_starter(mesh: dict, out: Path) -> dict:
         "RHO": RHO,
         "NU": NU,
         "Gapmin": CONTACT_KISS,
-        "P_MAX": P_MAX,
-        "T_END": T_END,
-        "T_RAMP": T_RAMP,
+        "P_MAX": p_max,
+        "T_END": t_end,
+        "T_RAMP": t_ramp,
+        "ams": bool(ams),
+        "Ishell": 1,
+        "dynamic": True,
     }
 
     lines = []
@@ -216,6 +231,10 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w(header_bar())
     w("# Inflation ABC letter A — OpenRadioss first light\n")
     w("# SI: kg, m, s, Pa. Do not retune μ or ρ.\n")
+    if note:
+        w(f"# {note}\n")
+    if ams:
+        w("# Kareem CFL fork: /AMS (not /DT/NODA/CST). μ/ρ/Ishell=1 unchanged.\n")
     for ln in law_card_lines():
         w(f"# {ln}\n")
     w(
@@ -227,7 +246,7 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w("# Free-free: no /BCS. OpenRadioss explicit inertial-relief analogue = /ADYREL (engine)\n")
     w("#   + /DAMP Rayleigh mass (starter). Radioss has no PARAM,INREL (that is OptiStruct).\n")
     w("#   Closed /PLOAD is self-equilibrated (net F≈0); /ADYREL+/DAMP kill residual RB drift.\n")
-    w(f"# PLOAD ramp 0 → {P_MAX:g} Pa in {T_RAMP}s, hold to {T_END}s (not MONVOL)\n")
+    w(f"# PLOAD ramp 0 → {p_max:g} Pa in {t_ramp}s, hold to {t_end}s (not MONVOL)\n")
     w(header_bar())
     w("/BEGIN\n")
     w(f"{RUNNAME}\n")
@@ -324,16 +343,16 @@ def write_starter(mesh: dict, out: Path) -> dict:
 
     w(header_bar())
     w(f"/FUNCT/{FUNCT_P}\n")
-    w(f"PLOAD ramp 0-1 over {T_RAMP}s then hold; Fscale={P_MAX:g} Pa\n")
+    w(f"PLOAD ramp 0-1 over {t_ramp}s then hold; Fscale={p_max:g} Pa\n")
     w(r20(0.0) + r20(0.0) + "\n")
-    w(r20(T_RAMP) + r20(1.0) + "\n")
-    w(r20(T_END) + r20(1.0) + "\n")
-    w(r20(T_END + 1.0) + r20(1.0) + "\n")
+    w(r20(t_ramp) + r20(1.0) + "\n")
+    w(r20(t_end) + r20(1.0) + "\n")
+    w(r20(t_end + 1.0) + r20(1.0) + "\n")
 
     w(header_bar())
     w("/PLOAD/1\n")
     w("internal pressure on film (positive = outward / inflate)\n")
-    w(i10(SURF_ID) + i10(FUNCT_P) + i10(0) + i10(0) + i10(1) + i10(0) + r20(1.0) + r20(P_MAX) + "\n")
+    w(i10(SURF_ID) + i10(FUNCT_P) + i10(0) + i10(0) + i10(1) + i10(0) + r20(1.0) + r20(p_max) + "\n")
 
     w(header_bar())
     w("# Time history: variables before object IDs (Radioss /TH). λ,V,Ψ from ANIM/VTK.\n")
@@ -346,6 +365,14 @@ def write_starter(mesh: dict, out: Path) -> dict:
     w("DEF\n")
     w(i10(1) + "\n")
 
+    if ams:
+        w(header_bar())
+        w("/GRPART/PART/2\n")
+        w("AMS part group (Kareem CFL fork; not NODA/CST)\n")
+        w(i10(PART_QUAD) + "\n")
+        w("/AMS\n")
+        w(i10(2) + "\n")
+
     w(header_bar())
     w("/END\n")
 
@@ -354,13 +381,21 @@ def write_starter(mesh: dict, out: Path) -> dict:
     return info
 
 
-def write_engine(out: Path) -> None:
+def write_engine(
+    out: Path,
+    *,
+    t_end: float | None = None,
+    ams: bool = False,
+    ams_tmin: float = 1.0e-4,
+    noda_stop: float = 1.0e-6,
+) -> None:
+    t_end = T_END if t_end is None else float(t_end)
     lines = []
     w = lines.append
     w("#RADIOSS ENGINE\n")
     w(header_bar())
     w(f"/RUN/{RUNNAME}/1\n")
-    w(r20(T_END).strip() + "\n" if False else f"{T_END:g}\n")
+    w(f"{t_end:g}\n")
     w("/TFILE\n")
     w("0.001\n")
     w("/ANIM/DT\n")
@@ -374,10 +409,13 @@ def write_engine(out: Path) -> None:
     w("/PRINT/-200\n")
     w("/DT\n")
     w("0.9 0.0\n")
-    w("# Nodal STOP at 1e-6: terminate on CFL collapse (do not hang at dt~1e-15).\n")
-    w("# First light /DT/NODA/CST added mass but still collapsed; STOP keeps ANIM through warn.\n")
+    w("# Nodal STOP: terminate on CFL collapse (do not hang at dt~1e-15). Not /DT/NODA/CST.\n")
     w("/DT/NODA/STOP\n")
-    w("0.9 1.0e-6\n")
+    w(f"0.9 {noda_stop:.8g}\n")
+    if ams:
+        w(f"# Kareem AMS fork (Ishell=1, μ/ρ unchanged). SCALE=0.9  Tmin={ams_tmin:.3e} s\n")
+        w("/DT/AMS/0\n")
+        w(f"0.9 {ams_tmin:.8g}\n")
     w("# Free-free / inertial relief analogue (no /BCS pins).\n")
     w("# /ADYREL = adaptive dynamic relaxation (OpenRadioss engine).\n")
     w("# Radioss has no PARAM,INREL — that keyword is OptiStruct only.\n")
@@ -387,21 +425,48 @@ def write_engine(out: Path) -> None:
 
 
 def write_law_card(path: Path, info: dict) -> None:
+    ams = bool(info.get("ams"))
     lines = law_card_lines() + [
         "",
         "Contact / load",
         "  /INTER/TYPE19 self-contact  Igap=4 (var gap + neighbor skip)  Irem_gap=2  Inacti=6  dtmin=1e-6",
         f"  Gapmin  = {CONTACT_KISS:.16g} m",
-        f"  /PLOAD  0 → {P_MAX:g} Pa in {T_RAMP}s, hold to {T_END}s",
+        f"  /PLOAD  0 → {info['P_MAX']:g} Pa in {info['T_RAMP']}s, hold to {info['T_END']}s",
         f"  /PROP   N=1  Ismstr=10  Ishell=1 (Belytschko; QEPH ruptured at rest)  Ithick=1  Thick=H0",
         "  /BCS    none (3-2-1 pins dropped)",
         "  IR      /ADYREL (engine) + /DAMP Rayleigh α=80 1/s (starter) — explicit free-free",
         "          OpenRadioss has no PARAM,INREL (OptiStruct). Closed /PLOAD is self-equilibrated.",
+        f"  AMS     = {'yes /AMS + /DT/AMS (Kareem CFL fork; not NODA/CST)' if ams else 'no'}",
         f"  V0      = {info['V0_m3']:.8g} m^3",
         f"  mesh    = N={info['n']}  /SHELL={info['nquads']}  /SH3N=0  "
         f"(source quads={info['nquads_src']} orphan faceTris={info['norphans_src']} paired)",
+        "  load    = dynamic PLOAD ramp (not Chiron QS) until a QS-ish tape exists",
     ]
     path.write_text("\n".join(lines) + "\n")
+
+
+def write_deck_meta(path: Path, info: dict) -> None:
+    meta = {
+        "P_MAX": info["P_MAX"],
+        "T_RAMP": info["T_RAMP"],
+        "T_END": info["T_END"],
+        "ANIM_DT": ANIM_DT,
+        "RUNNAME": RUNNAME,
+        "ams": bool(info.get("ams")),
+        "ams_tmin": info.get("ams_tmin"),
+        "noda_stop": info.get("noda_stop"),
+        "Ishell": 1,
+        "dynamic": True,
+        "n": info["n"],
+        "nquads": info["nquads"],
+        "nsh3n": info["nsh3n"],
+        "V0_m3": info["V0_m3"],
+        "MU": MU,
+        "RHO": RHO,
+        "H0": H0,
+        "Gapmin": CONTACT_KISS,
+    }
+    path.write_text(json.dumps(meta, indent=2) + "\n")
 
 
 def fetch_mesh(dest: Path) -> None:
@@ -419,6 +484,27 @@ def main(argv=None) -> int:
     ap.add_argument("--out-dir", type=Path, default=repo / "radioss" / "A-inflate")
     ap.add_argument("--fetch", action="store_true", help="download A.json if missing")
     ap.add_argument("--check", action="store_true", help="validate counts and exit after write")
+    ap.add_argument(
+        "--allow-n",
+        action="store_true",
+        help="refine meshes: skip ship N=1554 warning/assert (still all-quad, locked μ/ρ)",
+    )
+    ap.add_argument("--ams", action="store_true", help="Kareem CFL fork: starter /AMS + engine /DT/AMS")
+    ap.add_argument(
+        "--noda-stop",
+        type=float,
+        default=1.0e-6,
+        help="engine /DT/NODA/STOP Tmin (s). Hang guard stays STOP (not CST). Finest natural CFL can sit just under 1e-6.",
+    )
+    ap.add_argument(
+        "--ams-tmin",
+        type=float,
+        default=1.0e-4,
+        help="engine /DT/AMS Tmin (s); default 1e-4. Use ~5e-6 when 1e-4 ruptures the film.",
+    )
+    ap.add_argument("--t-ramp", type=float, default=None, help="PLOAD ramp duration (s); default 0.04")
+    ap.add_argument("--t-end", type=float, default=None, help="engine T_END (s); default 0.05")
+    ap.add_argument("--note", type=str, default=None, help="extra starter comment line")
     args = ap.parse_args(argv)
 
     if args.fetch or not args.mesh.exists():
@@ -426,7 +512,7 @@ def main(argv=None) -> int:
     mesh = load_mesh(args.mesh)
     n, nq, nt = mesh["n"], len(mesh["quads"]), len(mesh["orphans"])
     print(f"mesh {args.mesh}: N={n} source_quads={nq} orphan_tris={nt} type={mesh['elemType']}")
-    if n != 1554 or nq != 1540 or nt != 28:
+    if not args.allow_n and (n != 1554 or nq != 1540 or nt != 28):
         print(
             f"WARNING: expected ship A N=1554 / 1540 quads / 28 orphan tris; got {n}/{nq}/{nt}",
             file=sys.stderr,
@@ -434,13 +520,30 @@ def main(argv=None) -> int:
 
     starter = args.out_dir / f"{RUNNAME}_0000.rad"
     engine = args.out_dir / f"{RUNNAME}_0001.rad"
-    info = write_starter(mesh, starter)
-    write_engine(engine)
+    info = write_starter(
+        mesh,
+        starter,
+        t_ramp=args.t_ramp,
+        t_end=args.t_end,
+        ams=args.ams,
+        note=args.note,
+    )
+    info["noda_stop"] = float(args.noda_stop)
+    if args.ams:
+        info["ams_tmin"] = float(args.ams_tmin)
+    write_engine(
+        engine,
+        t_end=args.t_end,
+        ams=args.ams,
+        ams_tmin=args.ams_tmin,
+        noda_stop=args.noda_stop,
+    )
     write_law_card(args.out_dir / "law-card.txt", info)
+    write_deck_meta(args.out_dir / "deck-meta.json", info)
     print(f"wrote {starter}")
     print(f"wrote {engine}")
     print(f"μ1={MU:.8g} α1={ALPHA1} H0={H0:.8g} ν={NU} ρ={RHO} Gapmin={CONTACT_KISS:.8g}")
-    print(f"deck /SHELL={info['nquads']} /SH3N=0  IR={info['ir']}")
+    print(f"deck /SHELL={info['nquads']} /SH3N=0  IR={info['ir']}  AMS={info['ams']}")
     print(f"V0={info['V0_m3']*1e6:.4g} mL")
     if args.check:
         text = starter.read_text()
@@ -456,7 +559,14 @@ def main(argv=None) -> int:
         assert "/PLOAD/" in text
         assert "/MONVOL" not in text
         assert "/DAMP/" in text
-        assert info["nquads"] == 1554, info["nquads"]
+        assert not any(ln.startswith("/DT/NODA/CST") for ln in eng.splitlines()), "Kareem fork: no NODA/CST loop"
+        if args.ams:
+            assert any(ln.startswith("/AMS") for ln in text.splitlines())
+            assert any(ln.startswith("/DT/AMS") for ln in eng.splitlines())
+        else:
+            assert not any(ln.startswith("/AMS") for ln in text.splitlines())
+        if not args.allow_n:
+            assert info["nquads"] == 1554, info["nquads"]
         assert info["nsh3n"] == 0
         assert abs(MU - (800.0 * 6894.757) / 1.75) < 1e-6
         assert RHO == 1130.0

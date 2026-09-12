@@ -2,6 +2,16 @@ radioss/opt/
 radioss/env.sh
 radioss/A-inflate/run/
 radioss/A-inflate/artifacts/frames/
+radioss/A-refine/**/run/
+radioss/A-refine/**/artifacts/frames/
+radioss/A-refine/**/artifacts/A-inflate.gif
+radioss/A-refine/**/artifacts/A-inflate.mp4
+radioss/A-refine/meshes/A-finest.json
+radioss/A-refine/finest/Ainflate_0000.rad
+radioss/A-refine/forks/**/Ainflate_0000.rad
+radioss/A-refine/forks/**/run/
+radioss/A-refine/stills/*.png
+radioss/A-refine/**/artifacts/*.png
 __pycache__/
 *.pyc
 .venv/
