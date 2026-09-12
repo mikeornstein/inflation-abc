@@ -335,6 +335,7 @@ def render_frame(
     project=None,
     rest_fill=None,
     warn_label="WARN  first λ_max ≥ 2",
+    extra_edges=None,
 ):
     """Orthographic +Z view (or `project`), Y up. Fill + stroke **quads**."""
     w = h = size
@@ -392,6 +393,10 @@ def render_frame(
             pts = [to_px(x[q[i]]) for i in range(4)]
             ring = pts + [pts[0]]
             draw.line(ring, fill=edge, width=1)
+    if extra_edges:
+        feat = (38, 38, 44) if rest_fill is not None else (58, 58, 66)
+        for a, b in extra_edges:
+            draw.line([to_px(x[int(a)]), to_px(x[int(b)])], fill=feat, width=1)
     font = look_font(18)
     font_b = look_font(22)
     y = 10

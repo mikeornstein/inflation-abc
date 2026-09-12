@@ -25,6 +25,8 @@ RHO = 1130.0
 DENSITIES = ("coarse", "ship", "fine", "finer", "finest")
 NESTED = ("ship", "fine", "finer", "finest")
 
+from refine_same_load import resolve_deck  # noqa: E402  (after constants; no cycle)
+
 
 def rel(a, b) -> float:
     den = abs(b) if abs(b) > 1e-30 else 1e-30
@@ -132,6 +134,7 @@ def write_refine_md(
         "- H0 = 0.015×0.0254 m · Gapmin = CONTACT_KISS = 2·H0",
         "- `/PROP` Ishell=**1** (Belytschko) N=1 Ismstr=10 · no `/SH3N` · no `/BCS`",
         "- `/PLOAD` 0→65 kPa in 0.04 s (same ramp on every density unless a labeled fork)",
+        "- Hang guard is **`/DT/NODA/STOP`** (not CST). Finest nested CFL sits at ~9.7e-7; working tape uses STOP Tmin=**5e-7**.",
         "",
         "## Metrics lock (2026-09-11)",
         "",
@@ -179,9 +182,28 @@ def write_refine_md(
                 f"| {dens} | {t.get('N', '')} | "
                 f"{'—' if el is None else f'{el:.2f} s'} | "
                 f"{'—' if st is None else f'{st:.2f} s'} | "
-                f"{t.get('cycles') or '—'} | {t.get('threads') or '—'} | "
+                f"{t.get('cycles') if t.get('cycles') is not None else '—'} | {t.get('threads') or '—'} | "
                 f"{'this session' if t.get('rerun_this_session') else 'from existing .out'} |"
             )
+        forks = same_load.get("session_forks") or {}
+        if forks:
+            lines += [
+                "",
+                "Session forks (same μ/ρ; not nested-grade rows):",
+                "",
+                "| fork | engine ELAPSED | starter | cycles | threads | note |",
+                "|------|---------------:|--------:|-------:|--------:|------|",
+            ]
+            for name, t in forks.items():
+                el = t.get("engine_elapsed_s")
+                st = t.get("starter_s")
+                lines.append(
+                    f"| {name} | "
+                    f"{'—' if el is None else f'{el:.2f} s'} | "
+                    f"{'—' if st is None else f'{st:.2f} s'} | "
+                    f"{t.get('cycles') if t.get('cycles') is not None else '—'} | {t.get('threads') or '—'} | "
+                    f"{t.get('note', t.get('termination', ''))} |"
+                )
     if same_load and same_load.get("loads"):
         lines += [
             "",
@@ -301,6 +323,11 @@ def write_refine_md(
         "",
         *fork_lines(rows),
         "",
+        "Vanilla finest `/DT/NODA/STOP 0.9 1e-6` died at **t=0** (nodal dt = 9.74e-7). "
+        "That is mesh CFL, not a 1e-15 hang. Kareem `/AMS` (Tmin 1e-4 and 5e-6) **ruptured** "
+        "the LAW42 + Belytschko film; slower PLOAD cannot fix rest CFL. Working tape: "
+        "`forks/finest-stop5e7` keeps STOP (not CST) at Tmin=**5e-7**, same μ/ρ/Ishell=1/`/PLOAD`/`/ADYREL`.",
+        "",
         "## Reproduce",
         "",
         "```bash",
@@ -308,8 +335,11 @@ def write_refine_md(
         "python3 tools/refine_letter_a.py",
         "bash radioss/A-refine/run.sh",
         "python3 tools/refine_letter_a.py --finest-only",
+        "python3 tools/mesh_to_radioss.py --allow-n --check \\",
+        "  --mesh radioss/A-refine/meshes/A-finest.json \\",
+        "  --out-dir radioss/A-refine/forks/finest-stop5e7 --noda-stop 5e-7",
         "bash radioss/A-refine/run.sh --finest-only",
-        "python3 tools/refine_same_load.py",
+        "python3 tools/refine_same_load.py --session-rerun finest",
         "python3 tools/refine_report.py",
         "```",
         "",
@@ -327,7 +357,7 @@ def main(argv=None) -> int:
 
     rows = []
     for dens in DENSITIES:
-        deck = root / dens
+        deck = resolve_deck(root, dens) if dens == "finest" else root / dens
         if dens in ("finer", "finest") and not deck.exists() and dens not in summary:
             continue
         w = load_warn(deck)

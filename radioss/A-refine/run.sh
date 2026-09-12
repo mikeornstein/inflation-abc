@@ -28,7 +28,7 @@ run_one() {
   local dens="$1"
   local timeout_s="${2:-180}"
   local extra_post="${3:-}"
-  local deck="$DECK_ROOT/$dens"
+  local deck="${4:-$DECK_ROOT/$dens}"
   local run="${RUN_DIR:-$deck/run}"
   mkdir -p "$run"
   cp -f "$deck"/Ainflate_0000.rad "$deck"/Ainflate_0001.rad "$run"/
@@ -55,10 +55,12 @@ run_one() {
 
 if [[ "$FINEST_ONLY" -eq 1 ]]; then
   python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT" --finest-only
+  mkdir -p "$DECK_ROOT/forks/finest-stop5e7"
   python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
-    --mesh "$DECK_ROOT/meshes/A-finest.json" --out-dir "$DECK_ROOT/finest" \
-    --note "A-refine finest 1-to-4 of finer; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
-  run_one finest "${FINEST_TIMEOUT:-2400}" "--metrics-only"
+    --mesh "$DECK_ROOT/meshes/A-finest.json" --out-dir "$DECK_ROOT/forks/finest-stop5e7" \
+    --noda-stop 5e-7 \
+    --note "A-refine finest 1-to-4 of finer; STOP Tmin=5e-7 (mesh CFL ~9.7e-7 at 1e-6); same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
+  run_one finest "${FINEST_TIMEOUT:-2400}" "--metrics-only" "$DECK_ROOT/forks/finest-stop5e7"
   python3 "$ROOT/tools/refine_same_load.py" --root "$DECK_ROOT" --session-rerun finest
 elif [[ "$FINER_ONLY" -eq 1 ]]; then
   python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT" --finer-only

@@ -1,0 +1,8 @@
+ NUMBER OF THREADS PER DOMAIN     4
+ NODAL TIME STEP SCALE FACTOR,  . . . . . . . . .  0.9000000    
+  **ERROR : NODAL TIME STEP LESS OR EQUAL DTMIN N=       99081
+                           ** ELAPSED TIME **
+ ELAPSED TIME     =          0.73 s
+     NORMAL TERMINATION      
+     TOTAL NUMBER OF CYCLES  :       1
+        STARTER RUNTIME =          4.32s (00:00:04)

@@ -36,6 +36,18 @@ from radioss_post import (  # noqa: E402
 )
 
 NESTED = ("ship", "fine", "finer", "finest")
+
+
+def resolve_deck(root: Path, dens: str) -> Path:
+    """Prefer a labeled finest fork that has ANIM past rest."""
+    if dens == "finest":
+        for name in ("finest-stop5e7", "finest-ams"):
+            fork = root / "forks" / name
+            n_anim = len(list((fork / "run").glob("AinflateA0*"))) if (fork / "run").exists() else 0
+            n_vtk = len(list((fork / "run").glob("Ainflate_A0*.vtk"))) if (fork / "run").exists() else 0
+            if n_anim > 2 or n_vtk > 2:
+                return fork
+    return root / dens
 LOADS = (
     {"key": "p325", "p_Pa": 32500.0, "t": 0.020, "label": "32.5 kPa", "t_ms": 20},
     {"key": "p358", "p_Pa": 35750.0, "t": 0.022, "label": "35.8 kPa", "t_ms": 22},
@@ -70,27 +82,46 @@ def parse_timing(run_dir: Path) -> dict:
         "threads": None,
         "source": None,
         "rerun_this_session": False,
+        "termination": None,
     }
     eng = run_dir / "Ainflate_0001.out"
-    if not eng.exists():
+    st = run_dir / "Ainflate_0000.out"
+    txt = eng.read_text(errors="replace") if eng.exists() else ""
+    stxt = st.read_text(errors="replace") if st.exists() else ""
+    if not txt and not stxt:
         return out
-    txt = eng.read_text(errors="replace")
-    out["source"] = "Ainflate_0001.out"
+    out["source"] = "Ainflate_0001.out" if eng.exists() else "Ainflate_0000.out"
+    if "ERROR TERMINATION" in txt:
+        out["termination"] = "ERROR"
+    elif "NORMAL TERMINATION" in txt:
+        out["termination"] = "NORMAL"
     m = re.search(r"ELAPSED TIME\s*=\s*([0-9.]+)\s*s", txt)
+    if not m:
+        m = re.search(r"ELAPSED TIME\.*=\s*([0-9.]+)\s*s", txt)
     if m:
         out["engine_elapsed_s"] = float(m.group(1))
     m = re.search(r"TOTAL NUMBER OF CYCLES\s*:\s*(\d+)", txt)
     if m:
         out["cycles"] = int(m.group(1))
+    else:
+        cyc = re.findall(r"^\s+(\d+)\s+0\.\d", txt, re.M)
+        if cyc:
+            out["cycles"] = int(cyc[-1])
     m = re.search(r"NUMBER OF THREADS PER DOMAIN\s+(\d+)", txt)
     if m:
         out["threads"] = int(m.group(1))
     m = re.search(r"STARTER RUNTIME\s*=\s*([0-9.]+)\s*s", txt)
     if m:
         out["starter_s"] = float(m.group(1))
+    if out["starter_s"] is None and stxt:
+        m = re.search(r"ELAPSED TIME\.*=\s*([0-9.]+)\s*s", stxt)
+        if m:
+            out["starter_s"] = float(m.group(1))
     m = re.search(r"STARTER\+ENGINE RUNTIME\s*=\s*([0-9.]+)\s*s", txt)
     if m:
         out["starter_plus_engine_s"] = float(m.group(1))
+    elif out["engine_elapsed_s"] is not None and out["starter_s"] is not None:
+        out["starter_plus_engine_s"] = out["engine_elapsed_s"] + out["starter_s"]
     out["source"] = "Ainflate_0001.out (prior tape; not re-run this session)"
     return out
 
@@ -116,29 +147,73 @@ def vtk_for_row(run_dir: Path, row: dict) -> Path | None:
     return p if p.exists() else None
 
 
-def locked_camera(root: Path) -> tuple[float, float, float]:
-    """Same (cx, cy, span) in projected XY for rest + 35.8 kPa stills."""
-    pts = []
-    ship = json.loads((root / "meshes" / "A-ship.json").read_text())
-    pos = np.asarray(ship["pos0"], dtype=float).reshape(-1, 3)
-    pts.extend(pos)
-    fine_run = root / "fine" / "run"
-    # frame 11 file is typically Ainflate_A012.vtk
-    cand = fine_run / "Ainflate_A012.vtk"
-    if cand.exists():
-        x, _, _ = parse_vtk(cand)
-        pts.extend(np.asarray(x, dtype=float))
-    xy = np.asarray([project(p) for p in pts], dtype=float)
+def _aabb_camera(xy: np.ndarray, pad: float) -> tuple[float, float, float]:
     xmin, ymin = xy.min(0)
     xmax, ymax = xy.max(0)
-    span = max(xmax - xmin, ymax - ymin, 1e-6) * 1.22
+    span = max(xmax - xmin, ymax - ymin, 1e-6) * pad
     cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
     return float(cx), float(cy), float(span)
+
+
+def rest_camera(root: Path) -> tuple[float, float, float]:
+    """Same camera across rest densities, fitted to the undeformed letter."""
+    ship = json.loads((root / "meshes" / "A-ship.json").read_text())
+    pos = np.asarray(ship["pos0"], dtype=float).reshape(-1, 3)
+    xy = np.asarray([project(p) for p in pos], dtype=float)
+    return _aabb_camera(xy, 1.22)
+
+
+def load_camera(root: Path) -> tuple[float, float, float]:
+    """Same camera at both grade pressures, fitted to inflated AABB (not rest).
+
+    Rest-fitted framing crops the balloon: inflation puffs in Z, which this
+    3/4 view maps to +Y. Union of nested p325/p358 VTKs keeps every N in frame.
+    """
+    chunks = []
+    for dens in NESTED:
+        deck = resolve_deck(root, dens)
+        for name in ("Ainflate_A011.vtk", "Ainflate_A012.vtk"):
+            vtk = deck / "run" / name
+            if not vtk.exists():
+                continue
+            x, _cells, _t = parse_vtk(vtk)
+            chunks.append(np.asarray([project(p) for p in x], dtype=float))
+    if not chunks:
+        return rest_camera(root)
+    xy = np.vstack(chunks)
+    return _aabb_camera(xy, 1.18)
+
+
+def feature_edges(x: np.ndarray, quads, deg: float = 22.0):
+    """Boundary + dihedral edges — readable on N=99456 without a full wireframe."""
+    from collections import defaultdict
+
+    adj: dict[tuple[int, int], list[int]] = defaultdict(list)
+    nrms = np.zeros((len(quads), 3), dtype=float)
+    for fi, q in enumerate(quads):
+        p0, p1, p2 = x[int(q[0])], x[int(q[1])], x[int(q[2])]
+        n = np.cross(p1 - p0, p2 - p0)
+        ln = float(np.linalg.norm(n)) + 1e-30
+        nrms[fi] = n / ln
+        for k in range(4):
+            a, b = int(q[k]), int(q[(k + 1) % 4])
+            e = (a, b) if a < b else (b, a)
+            adj[e].append(fi)
+    cos_th = math.cos(math.radians(deg))
+    out = []
+    for (a, b), faces in adj.items():
+        if len(faces) < 2:
+            out.append((a, b))
+        elif abs(float(np.dot(nrms[faces[0]], nrms[faces[1]]))) < cos_th:
+            out.append((a, b))
+    return out
 
 
 def render_still(x, quads, X, camera, hud, *, rest=False, size=720, warn=False, warn_label=""):
     nq = len(quads)
     lams = np.ones(nq) if rest else quad_lams(X, x, quads)
+    full_wire = nq <= 30000
+    extra = None if full_wire else feature_edges(x, quads)
     return render_frame(
         x,
         quads,
@@ -147,7 +222,8 @@ def render_still(x, quads, X, camera, hud, *, rest=False, size=720, warn=False, 
         size=size,
         warn=warn,
         camera=camera,
-        draw_edges=nq <= 8000,
+        draw_edges=full_wire,
+        extra_edges=extra,
         project=project,
         rest_fill=BEIGE if rest else None,
         warn_label=warn_label or "same load",
@@ -225,9 +301,19 @@ def main(argv=None) -> int:
     root = args.root
     stills = root / "stills"
     stills.mkdir(parents=True, exist_ok=True)
-    camera = locked_camera(root)
+    cam_rest = rest_camera(root)
+    cam_load = load_camera(root)
     (root / "camera.json").write_text(
-        json.dumps({"cx": camera[0], "cy": camera[1], "span": camera[2], "az": AZ, "el": EL}, indent=2)
+        json.dumps(
+            {
+                "az": AZ,
+                "el": EL,
+                "rest": {"cx": cam_rest[0], "cy": cam_rest[1], "span": cam_rest[2]},
+                "load": {"cx": cam_load[0], "cy": cam_load[1], "span": cam_load[2]},
+                "note": "Rest camera fitted to undeformed ship. Load camera is the same at 32.5 and 35.8 kPa, fitted to nested inflated AABB.",
+            },
+            indent=2,
+        )
         + "\n"
     )
 
@@ -242,7 +328,7 @@ def main(argv=None) -> int:
     load_labs = {ld["key"]: [] for ld in LOADS}
 
     for dens in NESTED:
-        deck = root / dens
+        deck = resolve_deck(root, dens)
         if not deck.exists():
             continue
         meta = json.loads((deck / "deck-meta.json").read_text()) if (deck / "deck-meta.json").exists() else {}
@@ -265,7 +351,7 @@ def main(argv=None) -> int:
             # rest still
             if not args.no_stills:
                 hud = [f"{dens}  N={n}  rest", f"V0 ≈ {(summary.get(dens) or {}).get('V0_mL', 354):.0f} mL  /ADYREL"]
-                img = render_still(X, quads, X, camera, hud, rest=True, size=640)
+                img = render_still(X, quads, X, cam_rest, hud, rest=True, size=640)
                 img.save(stills / f"{dens}_rest.png")
                 rest_imgs.append(img.copy())
                 rest_labs.append(f"{dens} {n}")
@@ -311,7 +397,7 @@ def main(argv=None) -> int:
                         x,
                         quads,
                         X,
-                        camera,
+                        cam_load,
                         hud,
                         size=640,
                         warn=row["lam_max"] >= 2.0,
@@ -345,15 +431,44 @@ def main(argv=None) -> int:
 
     pairs = {ld["key"]: grade_load({r["density"]: r for r in loads_out[ld["key"]] if "lam_max" in r}, ld) for ld in LOADS}
 
+    session_forks = {}
+    vanilla = root / "finest"
+    if (vanilla / "run" / "Ainflate_0001.out").exists():
+        vt = parse_timing(vanilla / "run")
+        vt["rerun_this_session"] = "finest" in session
+        vt["density"] = "finest-vanilla"
+        vt["N"] = 99456
+        vt["note"] = "STOP Tmin=1e-6 died at t=0 (nodal dt 9.74e-7). Mesh CFL, not a hang."
+        session_forks["finest-vanilla"] = vt
+        (vanilla / "artifacts").mkdir(parents=True, exist_ok=True)
+        (vanilla / "artifacts" / "timing.json").write_text(json.dumps(vt, indent=2) + "\n")
+    ams = root / "forks" / "finest-ams"
+    if (ams / "run" / "Ainflate_0001.out").exists():
+        at = parse_timing(ams / "run")
+        at["rerun_this_session"] = True
+        at["density"] = "finest-ams"
+        at["N"] = 99456
+        at["note"] = "Kareem /AMS Tmin=5e-6: ERROR TERMINATION, shells ruptured. Same μ/ρ. Hang guard still STOP."
+        session_forks["finest-ams"] = at
+        (ams / "artifacts").mkdir(parents=True, exist_ok=True)
+        (ams / "artifacts" / "timing.json").write_text(json.dumps(at, indent=2) + "\n")
+
     payload = {
-        "camera": {"cx": camera[0], "cy": camera[1], "span": camera[2], "az": AZ, "el": EL},
+        "camera": {
+            "az": AZ,
+            "el": EL,
+            "rest": {"cx": cam_rest[0], "cy": cam_rest[1], "span": cam_rest[2]},
+            "load": {"cx": cam_load[0], "cy": cam_load[1], "span": cam_load[2]},
+        },
         "timings": timings,
+        "session_forks": session_forks,
         "loads": loads_out,
         "pairs": pairs,
         "note": (
             "Grade at the same PLOAD, not first λ≥2. "
             "engine_elapsed_s is OpenRadioss ELAPSED TIME; post/contact-gap is not solve time. "
-            "Finer 24864 elapsed recovered from existing .out unless listed in session-rerun."
+            "Finer 24864 elapsed recovered from existing .out (not re-run this session). "
+            "Finest working tape is forks/finest-stop5e7 (STOP Tmin=5e-7); vanilla 1e-6 CFL'd at t=0; /AMS ruptured."
         ),
         "gates": {"dV": DV_MAX, "dlam_max": DLAM_MAX, "dlam_aw": DAW_MAX},
     }

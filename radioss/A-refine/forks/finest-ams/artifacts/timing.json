@@ -1,0 +1,13 @@
+{
+  "engine_elapsed_s": null,
+  "starter_s": 4.41,
+  "starter_plus_engine_s": null,
+  "cycles": 0,
+  "threads": 4,
+  "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+  "rerun_this_session": true,
+  "termination": "ERROR",
+  "density": "finest-ams",
+  "N": 99456,
+  "note": "Kareem /AMS Tmin=5e-6: ERROR TERMINATION, shells ruptured. Same \u03bc/\u03c1. Hang guard still STOP."
+}

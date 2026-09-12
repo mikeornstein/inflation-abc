@@ -381,7 +381,14 @@ def write_starter(
     return info
 
 
-def write_engine(out: Path, *, t_end: float | None = None, ams: bool = False) -> None:
+def write_engine(
+    out: Path,
+    *,
+    t_end: float | None = None,
+    ams: bool = False,
+    ams_tmin: float = 1.0e-4,
+    noda_stop: float = 1.0e-6,
+) -> None:
     t_end = T_END if t_end is None else float(t_end)
     lines = []
     w = lines.append
@@ -402,14 +409,13 @@ def write_engine(out: Path, *, t_end: float | None = None, ams: bool = False) ->
     w("/PRINT/-200\n")
     w("/DT\n")
     w("0.9 0.0\n")
-    w("# Nodal STOP at 1e-6: terminate on CFL collapse (do not hang at dt~1e-15).\n")
-    w("# Hang guard only. Kareem CFL fork uses /AMS — not /DT/NODA/CST mass scaling.\n")
+    w("# Nodal STOP: terminate on CFL collapse (do not hang at dt~1e-15). Not /DT/NODA/CST.\n")
     w("/DT/NODA/STOP\n")
-    w("0.9 1.0e-6\n")
+    w(f"0.9 {noda_stop:.8g}\n")
     if ams:
-        w("# Kareem AMS fork (Ishell=1, μ/ρ unchanged). SCALE=0.9  Tmin=1e-4 s\n")
+        w(f"# Kareem AMS fork (Ishell=1, μ/ρ unchanged). SCALE=0.9  Tmin={ams_tmin:.3e} s\n")
         w("/DT/AMS/0\n")
-        w("0.9 1.0e-4\n")
+        w(f"0.9 {ams_tmin:.8g}\n")
     w("# Free-free / inertial relief analogue (no /BCS pins).\n")
     w("# /ADYREL = adaptive dynamic relaxation (OpenRadioss engine).\n")
     w("# Radioss has no PARAM,INREL — that keyword is OptiStruct only.\n")
@@ -447,6 +453,8 @@ def write_deck_meta(path: Path, info: dict) -> None:
         "ANIM_DT": ANIM_DT,
         "RUNNAME": RUNNAME,
         "ams": bool(info.get("ams")),
+        "ams_tmin": info.get("ams_tmin"),
+        "noda_stop": info.get("noda_stop"),
         "Ishell": 1,
         "dynamic": True,
         "n": info["n"],
@@ -482,6 +490,18 @@ def main(argv=None) -> int:
         help="refine meshes: skip ship N=1554 warning/assert (still all-quad, locked μ/ρ)",
     )
     ap.add_argument("--ams", action="store_true", help="Kareem CFL fork: starter /AMS + engine /DT/AMS")
+    ap.add_argument(
+        "--noda-stop",
+        type=float,
+        default=1.0e-6,
+        help="engine /DT/NODA/STOP Tmin (s). Hang guard stays STOP (not CST). Finest natural CFL can sit just under 1e-6.",
+    )
+    ap.add_argument(
+        "--ams-tmin",
+        type=float,
+        default=1.0e-4,
+        help="engine /DT/AMS Tmin (s); default 1e-4. Use ~5e-6 when 1e-4 ruptures the film.",
+    )
     ap.add_argument("--t-ramp", type=float, default=None, help="PLOAD ramp duration (s); default 0.04")
     ap.add_argument("--t-end", type=float, default=None, help="engine T_END (s); default 0.05")
     ap.add_argument("--note", type=str, default=None, help="extra starter comment line")
@@ -508,7 +528,16 @@ def main(argv=None) -> int:
         ams=args.ams,
         note=args.note,
     )
-    write_engine(engine, t_end=args.t_end, ams=args.ams)
+    info["noda_stop"] = float(args.noda_stop)
+    if args.ams:
+        info["ams_tmin"] = float(args.ams_tmin)
+    write_engine(
+        engine,
+        t_end=args.t_end,
+        ams=args.ams,
+        ams_tmin=args.ams_tmin,
+        noda_stop=args.noda_stop,
+    )
     write_law_card(args.out_dir / "law-card.txt", info)
     write_deck_meta(args.out_dir / "deck-meta.json", info)
     print(f"wrote {starter}")

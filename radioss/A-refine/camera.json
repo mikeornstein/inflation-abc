@@ -1,0 +1,15 @@
+{
+  "az": 0.55,
+  "el": 0.38,
+  "rest": {
+    "cx": 7.922821908944166e-06,
+    "cy": -0.0025726997341227117,
+    "span": 0.16453360994036287
+  },
+  "load": {
+    "cx": 0.010530043386358316,
+    "cy": 0.09536766106757043,
+    "span": 0.22242915461237792
+  },
+  "note": "Rest camera fitted to undeformed ship. Load camera is the same at 32.5 and 35.8 kPa, fitted to nested inflated AABB."
+}

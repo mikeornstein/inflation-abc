@@ -1,0 +1,13 @@
+{
+  "engine_elapsed_s": 0.73,
+  "starter_s": 4.32,
+  "starter_plus_engine_s": 5.06,
+  "cycles": 1,
+  "threads": 4,
+  "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+  "rerun_this_session": true,
+  "termination": "NORMAL",
+  "density": "finest-vanilla",
+  "N": 99456,
+  "note": "STOP Tmin=1e-6 died at t=0 (nodal dt 9.74e-7). Mesh CFL, not a hang."
+}

@@ -79,6 +79,26 @@
       "cfl_after_lambda2": true,
       "lam_p90": 1.3120540817821786,
       "lam_aw_mean": 1.2161638102187462
+    },
+    {
+      "density": "finest",
+      "N": 99456,
+      "n_quads": 99456,
+      "plan": "linear 1-to-4 of closed all-quad finer shell (nested 2\u00d7 h of finer; N=4\u00d7finer)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.018,
+      "p_Pa": 29249.999999999996,
+      "lam_max": 2.1370177999692817,
+      "V_mL": 693.3653144331487,
+      "Psi_J": 3.9274807463520993,
+      "gap_mm": null,
+      "punch": false,
+      "ams": false,
+      "metrics_only": true,
+      "cfl_after_lambda2": false,
+      "lam_p90": 1.2544421256703915,
+      "lam_aw_mean": 1.1776277915262057
     }
   ],
   "pairs": [
@@ -120,7 +140,418 @@
       "pass": false,
       "pair": "fine\u2192finer",
       "Ns": "6216 \u2192 24864"
+    },
+    {
+      "dp": 0.10013048108024351,
+      "dv": 0.1091439206997148,
+      "dlam": 0.0050809658301581295,
+      "dp_ok": false,
+      "dv_ok": false,
+      "dlam_ok": true,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": false,
+      "pair": "finer\u2192finest",
+      "Ns": "24864 \u2192 99456"
     }
   ],
-  "verdict": "not-yet \u2014 successive ~2\u00d7 N did not meet \u0394p\u22645%, \u0394V\u22645%, \u0394\u03bb_max\u22642% with \u03bb_max in [2.0, 2.35] and \u03a8\u22650. fine\u2192finer \u0394p=9.11%, \u0394V=13.67%, \u0394\u03bb_max=3.69% (locks 5%/5%/2%)."
+  "verdict": "not-yet \u2014 same load, peak stretch at hole/creases still moving. p325 finer\u2192finest \u0394V=0.27% \u0394\u03bb_max=9.47% \u0394\u03bb_aw=0.38%; p358 finer\u2192finest \u0394V=0.27% \u0394\u03bb_max=9.71% \u0394\u03bb_aw=0.40%",
+  "same_load": {
+    "camera": {
+      "az": 0.55,
+      "el": 0.38,
+      "rest": {
+        "cx": 7.922821908944166e-06,
+        "cy": -0.0025726997341227117,
+        "span": 0.16453360994036287
+      },
+      "load": {
+        "cx": 0.010530043386358316,
+        "cy": 0.09536766106757043,
+        "span": 0.22242915461237792
+      }
+    },
+    "timings": {
+      "ship": {
+        "density": "ship",
+        "N": 1554,
+        "engine_elapsed_s": 4.44,
+        "starter_s": 0.32,
+        "starter_plus_engine_s": 4.76,
+        "cycles": 3361,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": false,
+        "termination": "NORMAL"
+      },
+      "fine": {
+        "density": "fine",
+        "N": 6216,
+        "engine_elapsed_s": 19.44,
+        "starter_s": 0.37,
+        "starter_plus_engine_s": 19.81,
+        "cycles": 3837,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": false,
+        "termination": "NORMAL"
+      },
+      "finer": {
+        "density": "finer",
+        "N": 24864,
+        "engine_elapsed_s": 148.18,
+        "starter_s": 0.8,
+        "starter_plus_engine_s": 148.99,
+        "cycles": 9085,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": false,
+        "termination": "NORMAL"
+      },
+      "finest": {
+        "density": "finest",
+        "N": 99456,
+        "engine_elapsed_s": 1290.11,
+        "starter_s": 4.24,
+        "starter_plus_engine_s": 1294.35,
+        "cycles": 27058,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      }
+    },
+    "session_forks": {
+      "finest-vanilla": {
+        "engine_elapsed_s": 0.73,
+        "starter_s": 4.32,
+        "starter_plus_engine_s": 5.06,
+        "cycles": 1,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL",
+        "density": "finest-vanilla",
+        "N": 99456,
+        "note": "STOP Tmin=1e-6 died at t=0 (nodal dt 9.74e-7). Mesh CFL, not a hang."
+      },
+      "finest-ams": {
+        "engine_elapsed_s": null,
+        "starter_s": 4.41,
+        "starter_plus_engine_s": null,
+        "cycles": 0,
+        "threads": 4,
+        "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+        "rerun_this_session": true,
+        "termination": "ERROR",
+        "density": "finest-ams",
+        "N": 99456,
+        "note": "Kareem /AMS Tmin=5e-6: ERROR TERMINATION, shells ruptured. Same \u03bc/\u03c1. Hang guard still STOP."
+      }
+    },
+    "loads": {
+      "p325": [
+        {
+          "density": "ship",
+          "N": 1554,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200035,
+          "p_Pa": 32505.6875,
+          "lam_max": 1.9157917134840012,
+          "V_mL": 780.8855348502648,
+          "Psi_J": 6.493492550780746,
+          "punch": false,
+          "lam_aw_mean": 1.2521917645468617,
+          "lam_p90": 1.3626469971136455,
+          "lambda_field": {
+            "lam_max": 1.9157917134840012,
+            "lam_min": 1.1068151847329941,
+            "lam_mean": 1.2591672470887052,
+            "lam_aw_mean": 1.2521917645468617,
+            "lam_p50": 1.229762793747922,
+            "lam_p90": 1.3626469971136455,
+            "lam_p99": 1.7290923145664505,
+            "n_quads": 1554
+          }
+        },
+        {
+          "density": "fine",
+          "N": 6216,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200069,
+          "p_Pa": 32511.2125,
+          "lam_max": 1.992001501808443,
+          "V_mL": 780.2206535681136,
+          "Psi_J": 5.875912624516725,
+          "punch": false,
+          "lam_aw_mean": 1.226407984523685,
+          "lam_p90": 1.329594123761461,
+          "lambda_field": {
+            "lam_max": 1.992001501808443,
+            "lam_min": 1.0737174048026503,
+            "lam_mean": 1.228627717360019,
+            "lam_aw_mean": 1.226407984523685,
+            "lam_p50": 1.2090938506238273,
+            "lam_p90": 1.329594123761461,
+            "lam_p99": 1.579612641730265,
+            "n_quads": 6216
+          }
+        },
+        {
+          "density": "finer",
+          "N": 24864,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200029,
+          "p_Pa": 32504.7125,
+          "lam_max": 2.1479313658446633,
+          "V_mL": 778.3135015228792,
+          "Psi_J": 5.730576064143636,
+          "punch": false,
+          "lam_aw_mean": 1.2161638102187462,
+          "lam_p90": 1.3120540817821786,
+          "lambda_field": {
+            "lam_max": 2.1479313658446633,
+            "lam_min": 1.057167053755167,
+            "lam_mean": 1.216927634418403,
+            "lam_aw_mean": 1.2161638102187462,
+            "lam_p50": 1.2015031737740915,
+            "lam_p90": 1.3120540817821786,
+            "lam_p99": 1.5322219025459953,
+            "n_quads": 24864
+          }
+        },
+        {
+          "density": "finest",
+          "N": 99456,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200004,
+          "p_Pa": 32500.650000000005,
+          "lam_max": 2.3512544681331593,
+          "V_mL": 776.2329626797849,
+          "Psi_J": 5.650901859523257,
+          "punch": false,
+          "lam_aw_mean": 1.2115684666157283,
+          "lam_p90": 1.3056620226374793,
+          "lambda_field": {
+            "lam_max": 2.3512544681331593,
+            "lam_min": 1.0504286138530938,
+            "lam_mean": 1.2119853866822403,
+            "lam_aw_mean": 1.2115684666157283,
+            "lam_p50": 1.1983276229108326,
+            "lam_p90": 1.3056620226374793,
+            "lam_p99": 1.4915099096676183,
+            "n_quads": 99456
+          }
+        }
+      ],
+      "p358": [
+        {
+          "density": "ship",
+          "N": 1554,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220118,
+          "p_Pa": 35769.174999999996,
+          "lam_max": 2.1403635915940185,
+          "V_mL": 901.8243076553854,
+          "Psi_J": 9.501507844134085,
+          "punch": false,
+          "lam_aw_mean": 1.301268469489317,
+          "lam_p90": 1.4459938922874163,
+          "lambda_field": {
+            "lam_max": 2.1403635915940185,
+            "lam_min": 1.1174342158754902,
+            "lam_mean": 1.3088526611988358,
+            "lam_aw_mean": 1.301268469489317,
+            "lam_p50": 1.2724780943190421,
+            "lam_p90": 1.4459938922874163,
+            "lam_p99": 1.8668493932236567,
+            "n_quads": 1554
+          }
+        },
+        {
+          "density": "fine",
+          "N": 6216,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220071,
+          "p_Pa": 35761.5375,
+          "lam_max": 2.230237105872328,
+          "V_mL": 901.546876864852,
+          "Psi_J": 8.776310381922896,
+          "punch": false,
+          "lam_aw_mean": 1.273482967004559,
+          "lam_p90": 1.4102454061516416,
+          "lambda_field": {
+            "lam_max": 2.230237105872328,
+            "lam_min": 1.0867167177344643,
+            "lam_mean": 1.2760763402388944,
+            "lam_aw_mean": 1.273482967004559,
+            "lam_p50": 1.2493164777385428,
+            "lam_p90": 1.4102454061516416,
+            "lam_p99": 1.7138453705971344,
+            "n_quads": 6216
+          }
+        },
+        {
+          "density": "finer",
+          "N": 24864,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220014,
+          "p_Pa": 35752.275,
+          "lam_max": 2.4180712291427295,
+          "V_mL": 899.5910158701896,
+          "Psi_J": 8.60943100165176,
+          "punch": false,
+          "lam_aw_mean": 1.2629210435886216,
+          "lam_p90": 1.3908456061069063,
+          "lambda_field": {
+            "lam_max": 2.4180712291427295,
+            "lam_min": 1.0682390547682994,
+            "lam_mean": 1.264154160562759,
+            "lam_aw_mean": 1.2629210435886216,
+            "lam_p50": 1.2429065717698244,
+            "lam_p90": 1.3908456061069063,
+            "lam_p99": 1.6584904712735737,
+            "n_quads": 24864
+          }
+        },
+        {
+          "density": "finest",
+          "N": 99456,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220005,
+          "p_Pa": 35750.8125,
+          "lam_max": 2.652915455884248,
+          "V_mL": 897.170168378753,
+          "Psi_J": 8.510505219258466,
+          "punch": false,
+          "lam_aw_mean": 1.2578583522870332,
+          "lam_p90": 1.3828443823333512,
+          "lambda_field": {
+            "lam_max": 2.652915455884248,
+            "lam_min": 1.057310195929571,
+            "lam_mean": 1.2587393559252689,
+            "lam_aw_mean": 1.2578583522870332,
+            "lam_p50": 1.239642773951841,
+            "lam_p90": 1.3828443823333512,
+            "lam_p99": 1.6136808112924472,
+            "n_quads": 99456
+          }
+        }
+      ]
+    },
+    "pairs": {
+      "p325": [
+        {
+          "pair": "ship\u2192fine",
+          "Ns": "1554 \u2192 6216",
+          "load": "p325",
+          "dv": 0.0008514452534694539,
+          "dlam": 0.03977978805736082,
+          "daw": 0.02059091966038216,
+          "dpsi": 0.09510751285758637,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": false,
+          "pass": false
+        },
+        {
+          "pair": "fine\u2192finer",
+          "Ns": "6216 \u2192 24864",
+          "load": "p325",
+          "dv": 0.002444375237328811,
+          "dlam": 0.07827798517955889,
+          "daw": 0.008352990549810797,
+          "dpsi": 0.024734295701859962,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        },
+        {
+          "pair": "finer\u2192finest",
+          "Ns": "24864 \u2192 99456",
+          "load": "p325",
+          "dv": 0.002673137288539105,
+          "dlam": 0.09465996238131205,
+          "daw": 0.0037785564447863304,
+          "dpsi": 0.013903349982369605,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        }
+      ],
+      "p358": [
+        {
+          "pair": "ship\u2192fine",
+          "Ns": "1554 \u2192 6216",
+          "load": "p358",
+          "dv": 0.0003076328595030055,
+          "dlam": 0.041989835106182594,
+          "daw": 0.021352628712860765,
+          "dpsi": 0.0763244607179799,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": false,
+          "pass": false
+        },
+        {
+          "pair": "fine\u2192finer",
+          "Ns": "6216 \u2192 24864",
+          "load": "p358",
+          "dv": 0.0021694501360417077,
+          "dlam": 0.08422159364841732,
+          "daw": 0.008293729629365136,
+          "dpsi": 0.019014753695911546,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        },
+        {
+          "pair": "finer\u2192finest",
+          "Ns": "24864 \u2192 99456",
+          "load": "p358",
+          "dv": 0.002691053432870101,
+          "dlam": 0.09712047515853237,
+          "daw": 0.004008715609966047,
+          "dpsi": 0.011490397260203972,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        }
+      ]
+    },
+    "note": "Grade at the same PLOAD, not first \u03bb\u22652. engine_elapsed_s is OpenRadioss ELAPSED TIME; post/contact-gap is not solve time. Finer 24864 elapsed recovered from existing .out (not re-run this session). Finest working tape is forks/finest-stop5e7 (STOP Tmin=5e-7); vanilla 1e-6 CFL'd at t=0; /AMS ruptured.",
+    "gates": {
+      "dV": 0.05,
+      "dlam_max": 0.02,
+      "dlam_aw": 0.02
+    }
+  }
 }

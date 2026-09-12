@@ -8,7 +8,10 @@ radioss/A-refine/**/artifacts/A-inflate.gif
 radioss/A-refine/**/artifacts/A-inflate.mp4
 radioss/A-refine/meshes/A-finest.json
 radioss/A-refine/finest/Ainflate_0000.rad
+radioss/A-refine/forks/**/Ainflate_0000.rad
+radioss/A-refine/forks/**/run/
 radioss/A-refine/stills/*.png
+radioss/A-refine/**/artifacts/*.png
 __pycache__/
 *.pyc
 .venv/
