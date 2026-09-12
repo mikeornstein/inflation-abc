@@ -67,6 +67,7 @@ def resolve_deck(root: Path, dens: str) -> Path:
     names = [f"{dens}-stop1e7", f"{dens}-stop5e7", f"{dens}-ams"]
     if dens == "finest":
         names = ["finest-stop5e7", "finest-ams"] + names
+    started = None
     for name in names:
         fork = root / "forks" / name
         n_anim = len(list((fork / "run").glob("AinflateA0*"))) if (fork / "run").exists() else 0
@@ -74,6 +75,10 @@ def resolve_deck(root: Path, dens: str) -> Path:
         grade = (fork / "run" / "Ainflate_A011.vtk").exists() or list((fork / "run").glob("AinflateA011*"))
         if grade or ((n_anim > 2 or n_vtk > 2) and dens == "finest"):
             return fork
+        if started is None and (fork / "run").exists() and (n_anim > 0 or n_vtk > 0):
+            started = fork
+    if started is not None:
+        return started
     return root / dens
 LOADS = (
     {"key": "p325", "p_Pa": 32500.0, "t": 0.020, "label": "32.5 kPa", "t_ms": 20},
@@ -222,6 +227,12 @@ def load_camera(root: Path, nested: tuple[str, ...] | None = None) -> tuple[floa
             if not vtk.exists():
                 continue
             x, _cells, _t = parse_vtk(vtk)
+            # Skip CFL-blow-up frames (λ≫2 or V tens of litres) so the grade
+            # camera is not fitted to a ruptured balloon.
+            row_m = next((r for r in rows if r.get("file") == name), None)
+            if row_m is not None:
+                if float(row_m.get("lam_max") or 0) > 8.0 or float(row_m.get("V_mL") or 0) > 8000:
+                    continue
             chunks.append(np.asarray([project(p) for p in x], dtype=float))
     if not chunks:
         return rest_camera(root, letter_of(root))

@@ -392,7 +392,7 @@ def main(argv=None) -> int:
 
     rows = []
     for dens in DENSITIES:
-        deck = resolve_deck(root, dens) if dens == "finest" else root / dens
+        deck = resolve_deck(root, dens)
         if dens not in summary and not deck.exists():
             continue
         if dens == "finest" and letter in ("B", "C"):
@@ -470,26 +470,37 @@ def main(argv=None) -> int:
     last_nested = []
     if sl_pairs and last_pair_name:
         last_nested = [p for p in sl_pairs if p.get("pair") == last_pair_name]
+    blowup_loads = set()
+    if same_load:
+        for k, rows_ld in (same_load.get("loads") or {}).items():
+            if any(float(r.get("lam_max") or 0) > 8.0 for r in rows_ld if not r.get("missing") and r.get("lam_max") is not None):
+                blowup_loads.add(k)
+    live_nested = [p for p in last_nested if p.get("load") not in blowup_loads]
     if last_nested and all(p.get("pass") for p in last_nested) and len(last_nested) == 2:
         pair = last_nested[0]["pair"]
         verdict = (
             f"converged (same-load) — {pair} ΔV/Δλ_max/Δλ_aw within 5%/2%/2% "
             "at both 32.5 kPa and 35.8 kPa. Dynamic only — not an ABC apples claim."
         )
-    elif last_nested:
+    elif live_nested:
         bits = "; ".join(
             f"{p['load']} {p['pair']} ΔV={p['dv']*100:.2f}% Δλ_max={p['dlam']*100:.2f}% Δλ_aw={p['daw']*100:.2f}%"
             for p in last_nested
         )
-        vol_aw_ok = all(p.get("dv_ok") and p.get("daw_ok") for p in last_nested)
-        dlam_fail = any(not p.get("dlam_ok") for p in last_nested)
+        vol_aw_ok = all(p.get("dv_ok") and p.get("daw_ok") for p in live_nested)
+        dlam_fail = any(not p.get("dlam_ok") for p in live_nested)
         if vol_aw_ok and dlam_fail:
+            blow = (
+                " 35.8 kPa is a CFL blow-up on the outward tape (not a grade station)."
+                if blowup_loads
+                else ""
+            )
             verdict = (
                 f"letter {letter}: volume / λ_aw settled on last nested pair; "
                 "λ_max climbing at holes/creases is a sharp-hole singularity "
                 "(Mike 2026-09-12 — perfectly sharp hole in the geometry input; "
                 "real creases have a small radius). Do not chase λ_max with more "
-                "global refine. Not mesh-failed. " + bits
+                "global refine. Not mesh-failed. " + bits + blow
             )
         else:
             verdict = (

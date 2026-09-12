@@ -43,11 +43,11 @@ Desmopan 85085A value is the desked label. Not invented, not retuned.
 
 ## λ ≥ 2 frame
 
-- **frame 2** (`Ainflate_A003.vtk` / `artifacts/warn-lambda2.png`)
-- t = **0.0040115 s**
-- λ_max = **2.235**
-- p = **6519 Pa** (PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium)
-- V = **471.4 mL**
+- **frame 9** (`Ainflate_A010.vtk` / `artifacts/warn-lambda2.png`)
+- t = **0.018015 s**
+- λ_max = **2.118**
+- p = **29274 Pa** (PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium)
+- V = **1151 mL**
 - Overlay: `WARN  first λ_max ≥ 2`
 
 ## Correctness tape
@@ -56,22 +56,18 @@ Desmopan 85085A value is the desked label. Not invented, not retuned.
 
 | frame | t [s] | p [Pa] | λ_max | V [mL] | Ψ [J] |
 |------:|------:|-------:|------:|-------:|------:|
-| 0 | 0 | 0 | 1.0000 | 385.8 | 0 |
-| 1 | 0.0020099 | 3266 | 1.3431 | 469.7 | 0.1051 |
-| 2 | 0.0040115 | 6519 | 2.2353 | 471.4 | 0.3928 |
-| 3 | 0.0060011 | 9752 | 1.9157 | 510.3 | 0.5428 |
-| 4 | 0.0080068 | 13011 | 1.9161 | 545.2 | 0.7485 |
-| 5 | 0.010009 | 16265 | 1.7968 | 594.3 | 1.171 |
-| 6 | 0.012009 | 19515 | 1.7382 | 663.7 | 1.755 |
-| 7 | 0.014004 | 22756 | 1.6364 | 772.5 | 2.452 |
-| 8 | 0.016009 | 26014 | 1.5949 | 920.6 | 3.273 |
-| 9 | 0.018013 | 29271 | 1.6568 | 1128 | 4.424 |
-| 10 | 0.020002 | 32504 | 1.7446 | 1425 | 6.054 |
-| 11 | 0.022006 | 35761 | 1.8709 | 1863 | 8.6 |
-| 12 | 0.024001 | 39002 | 2.0354 | 2515 | 12.9 |
-| 13 | 0.02601 | 42267 | 2.3034 | 3694 | 22.94 |
-| 14 | 0.028003 | 45505 | 3.8850 | 9422 | 98.92 |
-| 15 | 0.028548 | 46390 | 22.4947 | 3.623e+04 | 493.3 |
+| 0 | 0 | 0 | 1.0000 | 448.2 | 0 |
+| 1 | 0.0020034 | 3255 | 1.2379 | 558 | 0.1366 |
+| 2 | 0.004004 | 6506 | 1.1979 | 586.8 | 0.2277 |
+| 3 | 0.0060016 | 9753 | 1.2125 | 621.5 | 0.4921 |
+| 4 | 0.0080018 | 13003 | 1.2889 | 657.1 | 0.8659 |
+| 5 | 0.010002 | 16253 | 1.3608 | 700.3 | 1.467 |
+| 6 | 0.012001 | 19502 | 1.4297 | 754.2 | 2.367 |
+| 7 | 0.014009 | 22764 | 1.5349 | 828.6 | 3.868 |
+| 8 | 0.016006 | 26009 | 1.7331 | 941.5 | 6.554 |
+| 9 | 0.018015 | 29274 | 2.1178 | 1151 | 12.32 |
+| 10 | 0.020003 | 32506 | 2.9824 | 1751 | 30.29 |
+| 11 | 0.021927 | 35631 | 57.5039 | 4.705e+04 | 1103 |
 
 Ψ(t) ≥ 0: **yes**  (min 0 J)
 Enclosed V(t) ** > 0 every frame** (no global inside-out)
@@ -85,6 +81,7 @@ Contact: `/INTER/TYPE19` Gapmin = **0.762 mm** (= CONTACT_KISS). A plane-distanc
 - Belytschko N=1, 3944 quads. `/DT/NODA/STOP 0.9 1e-6` hang guard (not NODA/CST). No /AMS on this tape.
 - Working PROP: Belytschko Ishell=1, Ismstr=10, N=1. μ and ρ unchanged.
 - Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. Quality PASS desk; converged dynamic ≠ ABC apples claim vs Chiron QS.
+- Post is **metrics-only**: contact gap skipped (report-only anyway); no per-frame PNG/GIF. p, λ_max, V, Ψ at first λ≥2 are still in warn.json.
 
 ## Artifacts
 

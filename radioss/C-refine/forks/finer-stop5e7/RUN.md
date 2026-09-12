@@ -1,4 +1,4 @@
-# C-refine ship — RUN
+# C-refine finer-stop5e7 — RUN
 
 Cloud VM job. OpenRadioss linux64_gf (`latest-20260728`). SI deck. **μ and ρ not retuned.**
 
@@ -26,7 +26,7 @@ LAW42 neo-Hookean (Ogden 1-term)
 - Ship `meshes/A.json` midplane is already quad (`nMidTris=0`); **not remeshed to tris**.
 - 28 orphan cap `faceTris` are **paired along shared edges into 14 quads** at convert time (same V0).
 - ANIM/VTK + GIF/warn still are drawn as **nice quads** (uniform fill per shell + perimeter edges; no CST diagonal).
-- ANIM cells: 986 quads, 0 tris
+- ANIM cells: 15776 quads, 0 tris
 
 ## Inertial relief / free-free
 
@@ -44,10 +44,10 @@ Desmopan 85085A value is the desked label. Not invented, not retuned.
 ## λ ≥ 2 frame
 
 - **frame 9** (`Ainflate_A010.vtk` / `artifacts/warn-lambda2.png`)
-- t = **0.018007 s**
-- λ_max = **2.087**
-- p = **29261 Pa** (PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium)
-- V = **1147 mL**
+- t = **0.018001 s**
+- λ_max = **2.265**
+- p = **29252 Pa** (PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium)
+- V = **1153 mL**
 - Overlay: `WARN  first λ_max ≥ 2`
 
 ## Correctness tape
@@ -57,18 +57,17 @@ Desmopan 85085A value is the desked label. Not invented, not retuned.
 | frame | t [s] | p [Pa] | λ_max | V [mL] | Ψ [J] |
 |------:|------:|-------:|------:|-------:|------:|
 | 0 | 0 | 0 | 1.0000 | 448.2 | 0 |
-| 1 | 0.0020189 | 3281 | 1.3018 | 557.3 | 0.273 |
-| 2 | 0.0040147 | 6524 | 1.3671 | 580.3 | 0.5654 |
-| 3 | 0.0060231 | 9788 | 1.4240 | 624.7 | 1.082 |
-| 4 | 0.0080145 | 13024 | 1.4868 | 671.1 | 1.328 |
-| 5 | 0.010016 | 16276 | 1.5703 | 714.4 | 1.964 |
-| 6 | 0.012021 | 19534 | 1.6113 | 767.4 | 3.025 |
-| 7 | 0.014034 | 22805 | 1.6793 | 839 | 4.497 |
-| 8 | 0.016003 | 26005 | 1.8129 | 946.5 | 7.105 |
-| 9 | 0.018007 | 29261 | 2.0872 | 1147 | 12.66 |
-| 10 | 0.020014 | 32523 | 2.8218 | 1720 | 30.06 |
-| 11 | 0.022 | 35750 | 18.8990 | 3.204e+04 | 590.9 |
-| 12 | 0.022256 | 36166 | 65.5925 | 1.607e+05 | 3819 |
+| 1 | 0.0020023 | 3254 | 1.1783 | 556.6 | 0.09698 |
+| 2 | 0.0040007 | 6501 | 1.2558 | 585.4 | 0.189 |
+| 3 | 0.0060012 | 9752 | 1.2312 | 620.6 | 0.4347 |
+| 4 | 0.0080011 | 13002 | 1.3196 | 656.8 | 0.8219 |
+| 5 | 0.010002 | 16253 | 1.4056 | 699.7 | 1.411 |
+| 6 | 0.012001 | 19501 | 1.4910 | 753.8 | 2.319 |
+| 7 | 0.014003 | 22754 | 1.6131 | 828.1 | 3.814 |
+| 8 | 0.016 | 26000 | 1.8398 | 941.7 | 6.505 |
+| 9 | 0.018001 | 29252 | 2.2654 | 1153 | 12.28 |
+| 10 | 0.020004 | 32507 | 3.2340 | 1779 | 30.99 |
+| 11 | 0.021824 | 35464 | 127.1907 | 3.749e+04 | 1186 |
 
 Ψ(t) ≥ 0: **yes**  (min 0 J)
 Enclosed V(t) ** > 0 every frame** (no global inside-out)
@@ -79,9 +78,10 @@ Contact: `/INTER/TYPE19` Gapmin = **0.762 mm** (= CONTACT_KISS). A plane-distanc
 - engine NORMAL TERMINATION (see /DT/NODA/STOP if cycles << T_END)
 - CFL: /DT/NODA/STOP fired (nodal dt ≤ 1e-6). ANIM through last written frame kept. No /AMS.
 - dtmin armed: MINIMUM TIME STEP . . . . . . . . . . . .  1.0000000000000E-06
-- Belytschko N=1, 986 quads. `/DT/NODA/STOP 0.9 1e-6` hang guard (not NODA/CST). No /AMS on this tape.
+- Belytschko N=1, 15776 quads. `/DT/NODA/STOP 0.9 1e-6` hang guard (not NODA/CST). No /AMS on this tape.
 - Working PROP: Belytschko Ishell=1, Ismstr=10, N=1. μ and ρ unchanged.
 - Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. Quality PASS desk; converged dynamic ≠ ABC apples claim vs Chiron QS.
+- Post is **metrics-only**: contact gap skipped (report-only anyway); no per-frame PNG/GIF. p, λ_max, V, Ψ at first λ≥2 are still in warn.json.
 
 ## Artifacts
 

@@ -31,7 +31,7 @@ At **first λ_max ≥ 2** on each mesh N (historical crossing, not the grade):
 
 | density | N | /SHELL | plan |
 |---------|--:|-------:|------|
-| ship | 988 | 986 | ship meshes/C.json — paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner) |
+| ship | 988 | 986 | ship meshes/C.json — paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner); flipped 206 inward /SHELL so +PLOAD is out of V |
 | fine | 3946 | 3944 | linear 1-to-4 of closed all-quad ship shell (nested 2× h; N×4 on a surface) |
 | finer | 15778 | 15776 | linear 1-to-4 of closed all-quad fine shell (nested 2× h of fine; N=4×fine) |
 
@@ -41,48 +41,57 @@ Solve time is starter + engine from `Ainflate_0001.out`. Contact-gap / GIF post 
 
 | density | N | engine ELAPSED | starter | cycles | threads | timed |
 |---------|--:|---------------:|--------:|-------:|--------:|-------|
-| ship | 988 | 1.39 s | 0.35 s | 1473 | 4 | this session |
-| fine | 3946 | 7.99 s | 0.35 s | 2649 | 4 | this session |
-| finer | 15778 | 52.56 s | 0.55 s | 7079 | 4 | this session |
+| ship | 988 | 3.05 s | 0.32 s | 4301 | 4 | this session |
+| fine | 3946 | 14.34 s | 0.31 s | 6603 | 4 | this session |
+| finer | 15778 | 109.72 s | 0.70 s | 9765 | 4 | this session |
+
+Session forks (same μ/ρ; not nested-grade rows):
+
+| fork | engine ELAPSED | starter | cycles | threads | note |
+|------|---------------:|--------:|-------:|--------:|------|
+| finer-stop5e7 | 109.72 s | 0.70 s | 9765 | 4 | C-refine finer — STOP Tmin=5e-7 |
+| finer-vanilla | 4.39 s | 0.53 s | 619 | 4 | vanilla finer STOP 1e-6 (not the nested-grade row; see forks/) |
 
 ## Same load (the grade) — nested family only
 
 Mike: same p → same strain/deformation. Stations are PLOAD **32.5 kPa** (t≈20 ms) and **35.8 kPa** (t≈22 ms); if ANIM frames differ, the table uses the closest **p**. Coarse Gmsh remesh is excluded. Peak λ_max at holes/creases is a sharp-hole singularity — volume / λ_aw is the signal.
 
+Frame-station notes: C finer p358: ANIM t=21.8 ms p=35464 Pa (target t≈22 ms / 35750 Pa)
+
 ### 32.5 kPa (t≈20 ms)
 
 | N | density | t [ms] | p [Pa] | λ_max | λ_aw | V [mL] | Ψ [J] |
 |--:|---------|-------:|-------:|------:|-----:|-------:|------:|
-| 988 | ship | 20 | 32537 | 1.9072 | 1.2706 | 1806 | 7.652 |
-| 3946 | fine | 20 | 32504 | 1.7446 | 1.2202 | 1425 | 6.054 |
-| 15778 | finer | 20 | 32506 | 1.8414 | 1.2117 | 1413 | 5.861 |
+| 988 | ship | 20 | 32523 | 2.8218 | 1.5505 | 1720 | 30.06 |
+| 3946 | fine | 20 | 32506 | 2.9824 | 1.5326 | 1751 | 30.29 |
+| 15778 | finer | 20 | 32507 | 3.2340 | 1.5305 | 1779 | 30.99 |
 
 | pair | N_c → N_f | ΔV | Δλ_max | Δλ_aw | pass |
 |------|-----------|---:|-------:|------:|:----:|
-| ship→fine | 988 → 3946 | 21.10% | 8.52% | 3.96% | **FAIL** |
-| fine→finer | 3946 → 15778 | 0.86% | 5.55% | 0.70% | **FAIL** |
+| ship→fine | 988 → 3946 | 1.78% | 5.69% | 1.15% | **FAIL** |
+| fine→finer | 3946 → 15778 | 1.60% | 8.44% | 0.14% | **FAIL** |
 
 ### 35.8 kPa (t≈22 ms)
 
 | N | density | t [ms] | p [Pa] | λ_max | λ_aw | V [mL] | Ψ [J] |
 |--:|---------|-------:|-------:|------:|-----:|-------:|------:|
-| 988 | ship | 22 | 35763 | 2.0436 | 1.3060 | 2221 | 10.29 |
-| 3946 | fine | 22 | 35761 | 1.8709 | 1.2595 | 1863 | 8.6 |
-| 15778 | finer | 22 | 35752 | 1.9853 | 1.2504 | 1845 | 8.359 |
+| 988 | ship | 22 | 35750 | 18.8990 | 3.3668 | 3.204e+04 | 590.9 |
+| 3946 | fine | 21.9 | 35631 | 57.5039 | 3.8966 | 4.705e+04 | 1103 |
+| 15778 | finer | 21.8 | 35464 | 127.1907 | 3.5685 | 3.749e+04 | 1186 |
 
 | pair | N_c → N_f | ΔV | Δλ_max | Δλ_aw | pass |
 |------|-----------|---:|-------:|------:|:----:|
-| ship→fine | 988 → 3946 | 16.13% | 8.45% | 3.56% | **FAIL** |
-| fine→finer | 3946 → 15778 | 0.99% | 6.11% | 0.72% | **FAIL** |
+| ship→fine | 988 → 3946 | 46.83% | 204.27% | 15.73% | **FAIL** |
+| fine→finer | 3946 → 15778 | 20.32% | 121.19% | 8.42% | **FAIL** |
 
 
 ## First λ_max ≥ 2 (historical crossing — not the grade)
 
 | N | density | t [ms] | p [Pa] | λ_max | V [mL] | Ψ [J] | λ∈[2.0,2.35] | Ψ≥0 | contact |
 |--:|---------|-------:|-------:|------:|-------:|------:|:------------:|:---:|---------|
-| 988 | ship | 22 | 35763 | 2.0436 | 2221 | 10.29 | yes | yes | gap=0.000184 mm; punch=False (report-only) |
-| 3946 | fine | 4.01 | 6519 | 2.2353 | 471.4 | 0.3928 | yes | yes | gap=1.14e-06 mm; punch=False (report-only) |
-| 15778 | finer | 24 | 39005 | 2.1653 | 2492 | 12.64 | yes | yes | metrics-only (gap skipped; report-only) |
+| 988 | ship | 18 | 29261 | 2.0872 | 1147 | 12.66 | yes | yes | gap=2.48e-05 mm; punch=False (report-only) |
+| 3946 | fine | 18 | 29274 | 2.1178 | 1151 | 12.32 | yes | yes | metrics-only (gap skipped; report-only) |
+| 15778 | finer | 18 | 29252 | 2.2654 | 1153 | 12.28 | yes | yes | metrics-only (gap skipped; report-only) |
 
 All values are **dynamic** (explicit `/PLOAD` + `/ADYREL`), not Chiron QS.
 
@@ -90,20 +99,20 @@ All values are **dynamic** (explicit `/PLOAD` + `/ADYREL`), not Chiron QS.
 
 | N | density | λ_aw_mean | λ_p90 |
 |--:|---------|----------:|------:|
-| 988 | ship | 1.3060 | 1.4525 |
-| 3946 | fine | 1.0685 | 1.1125 |
-| 15778 | finer | 1.3043 | 1.4587 |
+| 988 | ship | 1.3542 | 1.5814 |
+| 3946 | fine | 1.3360 | 1.5659 |
+| 15778 | finer | 1.3293 | 1.5532 |
 
 ## Successive pairs (relative change vs coarser N)
 
 | pair | N_c → N_f | Δp | ΔV | Δλ_max | λ band | Ψ≥0 | pass |
 |------|-----------|---:|---:|-------:|:------:|:---:|:----:|
-| ship→fine | 988 → 3946 | 81.77% | 78.78% | 9.38% | yes | yes | **FAIL** |
-| fine→finer | 3946 → 15778 | 498.36% | 428.70% | 3.13% | yes | yes | **FAIL** |
+| ship→fine | 988 → 3946 | 0.04% | 0.41% | 1.47% | yes | yes | **PASS** |
+| fine→finer | 3946 → 15778 | 0.07% | 0.12% | 6.97% | yes | yes | **FAIL** |
 
 ## Verdict
 
-**letter C: volume / λ_aw settled on last nested pair; λ_max climbing at holes/creases is a sharp-hole singularity (Mike 2026-09-12 — perfectly sharp hole in the geometry input; real creases have a small radius). Do not chase λ_max with more global refine. Not mesh-failed. p325 fine→finer ΔV=0.86% Δλ_max=5.55% Δλ_aw=0.70%; p358 fine→finer ΔV=0.99% Δλ_max=6.11% Δλ_aw=0.72%**
+**letter C: volume / λ_aw settled on last nested pair; λ_max climbing at holes/creases is a sharp-hole singularity (Mike 2026-09-12 — perfectly sharp hole in the geometry input; real creases have a small radius). Do not chase λ_max with more global refine. Not mesh-failed. p325 fine→finer ΔV=1.60% Δλ_max=8.44% Δλ_aw=0.14%; p358 fine→finer ΔV=20.32% Δλ_max=121.19% Δλ_aw=8.42% 35.8 kPa is a CFL blow-up on the outward tape (not a grade station).**
 
 Converged dynamic on this explicit tape is **not** an ABC apples-to-apples claim against the JS Chiron QS warn (~54 kPa).
 

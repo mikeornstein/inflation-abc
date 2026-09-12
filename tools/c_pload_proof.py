@@ -521,7 +521,37 @@ def write_md(out: Path, payload: dict) -> None:
     if payload.get("vtk_note"):
         a(payload["vtk_note"])
         a("")
-    a("Glyph stills: green = +PLOAD out of enclosed V. Same camera as the C refine ladder (`az=0.55 el=0.38`). Frames are rest (`Ainflate_A001.vtk`) and the refine-ladder pressures (`A011` ≈ 32.5 kPa, `A012` ≈ 35.8 kPa).")
+    a("Glyph stills: green = +PLOAD out of enclosed V. Same camera as the C refine ladder (`az=0.55 el=0.38`). Frames are rest (`Ainflate_A001.vtk`) and the refine-ladder pressures (`A011` ≈ 32.5 kPa, `A012` ≈ 35.8 kPa). On the outward tape, **35.8 kPa is a CFL blow-up** (λ tens, V tens of litres) — labeled as such.")
+    a("")
+    sl = payload.get("same_load") or {}
+    loads = sl.get("loads") or {}
+    p325 = [r for r in loads.get("p325", []) if not r.get("missing")]
+    if p325:
+        a("### Same-load after the flip (honest VTK)")
+        a("")
+        a("| N | density | t [ms] | p [kPa] | λ_max | λ_aw | V [mL] | Ψ [J] |")
+        a("|--:|---------|-------:|--------:|------:|-----:|-------:|------:|")
+        for r in p325:
+            a(
+                f"| {r['N']} | {r['density']} | {r['t']*1e3:.2f} | {r['p_Pa']/1e3:.1f} | {r['lam_max']:.3f} | {r['lam_aw_mean']:.4f} | {r['V_mL']:.1f} | {r['Psi_J']:.3g} |"
+            )
+        a("")
+        if len(p325) >= 2:
+            dv = abs(p325[1]["V_mL"] - p325[0]["V_mL"]) / max(p325[0]["V_mL"], 1e-30)
+            a(
+                f"32.5 kPa ship→fine ΔV = **{100*dv:.2f}%**. Mixed-winding tapes had ship **1806 mL** vs fine **1425 mL** — that gap was the inward side-wall patch, not coarseness alone."
+            )
+            a("")
+        p358 = [r for r in loads.get("p358", []) if not r.get("missing")]
+        if p358 and any(r.get("lam_max", 0) > 8 for r in p358):
+            a(
+                "35.8 kPa (`A012`) on this outward tape is **CFL blow-up** (ship λ_max={:.1f}, fine λ_max={:.1f}). Not a grade station. Hang guard `/DT/NODA/STOP` fires immediately after. μ/ρ not retuned.".format(
+                    next((r["lam_max"] for r in p358 if r["density"]=="ship"), 0),
+                    next((r["lam_max"] for r in p358 if r["density"]=="fine"), 0),
+                )
+            )
+            a("")
+
     a("")
     a("## 2) TYPE19 — field that actually exists")
     a("")
@@ -546,7 +576,7 @@ def write_md(out: Path, payload: dict) -> None:
         a(f"| {dens} | {kt} | {il} | {rt} | {eng.get('n_remove_secondary', 0)} |")
     a("")
     if payload["any_kiss"]:
-        a("First kiss = first ANIM frame where max |Contact_Forces| exceeds **1 N** (TYPE19 self-collapse, not Inacti dust). Finer can show 0.02–0.1 N trace from t≈2 ms with no node above 0.1 N — not a kiss. Stills at the 1 N frame are `*_first_kiss_cont.png`.")
+        a("First ANIM |Contact_Forces| > **1 N** is the TYPE19 field (not invented). On this outward tape that event is **fine A002 t=2.00 ms**: 14 nodes, 2.15 N on the **inner hole** (Gapmin), not a film folding onto itself. CONT is **0** at 32.5 kPa on all three densities. Ship never exceeds 1 N. Finer INTER-limits at 21.5 ms as the balloon CFL-blows; no ANIM |CONT|>1 N. Mixed-winding self-collapse at A016 ~28 ms does not appear — `/DT/NODA/STOP` fires at ~22 ms.")
     else:
         a("No ANIM frame has |Contact_Forces| above 1 N. INTER may still limit CFL from Gapmin proximity.")
     a("")
@@ -554,7 +584,7 @@ def write_md(out: Path, payload: dict) -> None:
     a("")
     a("## Locks")
     a("")
-    a("LAW42 μ₁=(800×6894.757)/1.75, α₁=2, ρ=1130, H0, Gapmin=CONTACT_KISS, Ishell=1 N=1 Ismstr=10, `/ADYREL`, `/PLOAD` 0→65 kPa in 0.04 s, `/DT/NODA/STOP`. No finest. No merge. No retarget.")
+    a("LAW42 μ₁=(800×6894.757)/1.75, α₁=2, ρ=1130, H0, Gapmin=CONTACT_KISS, Ishell=1 N=1 Ismstr=10, `/ADYREL`, `/PLOAD` 0→65 kPa in 0.04 s, `/DT/NODA/STOP`. No finest. No merge. No retarget. Finer vanilla STOP 1e-6 CFL'd at t≈2 ms; working tape `radioss/C-refine/forks/finer-stop5e7` (STOP Tmin=5e-7, not CST).")
     a("")
     a("## Reproduce")
     a("")
@@ -591,6 +621,7 @@ def main(argv=None) -> int:
     camj = json.loads((root / "camera.json").read_text())
     cam_rest = camera_tuple(camj, "rest")
     cam_load = camera_tuple(camj, "load")
+    same_load = json.loads((root / "same_load.json").read_text()) if (root / "same_load.json").exists() else {}
 
     frames = [
         {"key": "rest", "file": "Ainflate_A001.vtk", "label": "rest  p=0", "camera": "rest"},
@@ -664,6 +695,10 @@ def main(argv=None) -> int:
             rec[fr["key"]]["p_Pa"] = pressure_at_t(t if t else 0.0)
             rec[fr["key"]]["file"] = fr["file"]
             cam = cam_rest if fr["camera"] == "rest" else cam_load
+            # 35.8 kPa is a CFL blow-up on the outward C tape; keep that
+            # station on the load camera. Early kiss uses rest framing.
+            if fr["key"] == "p358" and cls.get("V_mL", 0) > 8000:
+                cam = cam_load
             hud = [
                 f"C-{dens}  N={n}  +PLOAD n=(N3-N1)×(N4-N2)",
                 f"{fr['label']}  out={cls['outward']} in={cls['inward']}  V={cls['V_mL']:.0f} mL",
@@ -691,7 +726,9 @@ def main(argv=None) -> int:
                     f"C-{dens}  first kiss  {first_kiss['file']}",
                     f"t={t*1e3:.2f} ms  p={pressure_at_t(t)/1e3:.1f} kPa  max|CONT|={first_kiss['max_CONT_N']:.3e} N",
                 ]
-                cimg, mx, nh = render_cont(x, quads, cont, cam_load, hud, vmax=max(vmax_cont, 1e-12))
+                cimg, mx, nh = render_cont(
+                    x, quads, cont, cam_rest if t < 0.01 else cam_load, hud, vmax=max(vmax_cont, 1e-12)
+                )
                 cimg.save(stills / f"{dens}_first_kiss_cont.png")
         counts[dens] = rec
         print(
@@ -736,6 +773,7 @@ def main(argv=None) -> int:
         "any_inward": any_inward,
         "any_kiss": any_kiss,
         "before_flip": before_flip,
+        "same_load": same_load,
         "vtk_note": (
             "`anim_to_vtk` used to skip existing VTK; a shorter re-run then mixed leftover "
             "A0xx frames. Post now drops ANIM/VTK older than the copied engine `.rad` and "
