@@ -1,0 +1,12 @@
+{
+  "density": "finest",
+  "N": 99456,
+  "engine_elapsed_s": 1290.11,
+  "starter_s": 4.24,
+  "starter_plus_engine_s": 1294.35,
+  "cycles": 27058,
+  "threads": 4,
+  "source": "Ainflate_0001.out (timed this session)",
+  "rerun_this_session": true,
+  "termination": "NORMAL"
+}

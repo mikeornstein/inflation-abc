@@ -1,0 +1,21 @@
+{
+  "P_MAX": 65000.0,
+  "T_RAMP": 0.04,
+  "T_END": 0.05,
+  "ANIM_DT": 0.002,
+  "RUNNAME": "Ainflate",
+  "ams": false,
+  "ams_tmin": null,
+  "noda_stop": 5e-07,
+  "Ishell": 1,
+  "dynamic": true,
+  "letter": "C",
+  "n": 15778,
+  "nquads": 15776,
+  "nsh3n": 0,
+  "V0_m3": 0.00044820737887553023,
+  "MU": 3151888.9142857143,
+  "RHO": 1130.0,
+  "H0": 0.000381,
+  "Gapmin": 0.000762
+}

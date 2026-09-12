@@ -1,0 +1,13 @@
+{
+  "engine_elapsed_s": null,
+  "starter_s": 2.12,
+  "starter_plus_engine_s": null,
+  "cycles": 3000,
+  "threads": 4,
+  "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+  "rerun_this_session": true,
+  "termination": "ERROR",
+  "density": "finer-ams",
+  "N": 71230,
+  "note": "B-refine finer \u2014 Kareem /AMS ruptured"
+}

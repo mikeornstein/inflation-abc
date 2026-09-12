@@ -1,0 +1,13 @@
+{
+  "engine_elapsed_s": null,
+  "starter_s": 0.56,
+  "starter_plus_engine_s": null,
+  "cycles": 7400,
+  "threads": 4,
+  "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+  "rerun_this_session": true,
+  "termination": "ERROR",
+  "density": "fine-ams",
+  "N": 17806,
+  "note": "B-refine fine \u2014 Kareem /AMS (not the grade row)"
+}

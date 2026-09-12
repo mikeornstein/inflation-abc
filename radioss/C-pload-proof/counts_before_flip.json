@@ -1,0 +1,400 @@
+{
+  "letter": "C",
+  "convention": {
+    "PLOAD_n": "n = (N3-N1) x (N4-N2)  Altair /PLOAD 3D",
+    "outward": "out of enclosed volume (signed CST volume > 0)",
+    "ANIM_field": "Contact_Forces (/ANIM/VECT/CONT)",
+    "PCONT": "not dumped on these tapes",
+    "gap_scalar": "not in VTK"
+  },
+  "counts": {
+    "ship": {
+      "N": 988,
+      "density": "ship",
+      "json_rest": {
+        "n_faces": 986,
+        "outward": 780,
+        "inward": 206,
+        "degenerate": 0,
+        "pload_agrees_shell": 986,
+        "V_m3": 0.0003858139437039592,
+        "V_mL": 385.8139437039592,
+        "V_oriented_mL": 448.2073788755111,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 416,
+        "manifold_opposite_edges": 1556,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.0016071411363741905,
+          0.0001101255124274813,
+          -6.776263578034403e-21
+        ],
+        "net_area_n_norm": 0.0016109097618158318
+      },
+      "rest": {
+        "n_faces": 986,
+        "outward": 780,
+        "inward": 206,
+        "degenerate": 0,
+        "pload_agrees_shell": 986,
+        "V_m3": 0.00038581446415929976,
+        "V_mL": 385.81446415929975,
+        "V_oriented_mL": 448.20737684866003,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 416,
+        "manifold_opposite_edges": 1556,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.0016071295476680024,
+          0.00011012535359279971,
+          1.4230153513872246e-19
+        ],
+        "net_area_n_norm": 0.0016108981893625362,
+        "t": 0.0,
+        "p_Pa": 0.0,
+        "file": "Ainflate_A001.vtk"
+      },
+      "p325": {
+        "n_faces": 986,
+        "outward": 780,
+        "inward": 206,
+        "degenerate": 0,
+        "pload_agrees_shell": 986,
+        "V_m3": 0.0018064148669408452,
+        "V_mL": 1806.4148669408453,
+        "V_oriented_mL": 749.2449871154552,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 416,
+        "manifold_opposite_edges": 1556,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.008633527442217601,
+          0.001816162048259995,
+          -3.8370592510619805e-19
+        ],
+        "net_area_n_norm": 0.008822484949324897,
+        "t": 0.0200229,
+        "p_Pa": 32537.212499999998,
+        "file": "Ainflate_A011.vtk"
+      },
+      "p358": {
+        "n_faces": 986,
+        "outward": 780,
+        "inward": 206,
+        "degenerate": 0,
+        "pload_agrees_shell": 986,
+        "V_m3": 0.0022214631106057007,
+        "V_mL": 2221.463110605701,
+        "V_oriented_mL": 812.175895867604,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 416,
+        "manifold_opposite_edges": 1556,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.009191386850528711,
+          0.001928402590000006,
+          -3.1086109164232822e-19
+        ],
+        "net_area_n_norm": 0.009391503009912249,
+        "t": 0.0220083,
+        "p_Pa": 35763.4875,
+        "file": "Ainflate_A012.vtk"
+      }
+    },
+    "fine": {
+      "N": 3946,
+      "density": "fine",
+      "json_rest": {
+        "n_faces": 3944,
+        "outward": 3120,
+        "inward": 824,
+        "degenerate": 0,
+        "pload_agrees_shell": 3944,
+        "V_m3": 0.00038581394370395476,
+        "V_mL": 385.81394370395475,
+        "V_oriented_mL": 448.2073788755045,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 832,
+        "manifold_opposite_edges": 7056,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.001607141136374172,
+          0.00011012551242748062,
+          -5.082197683525802e-21
+        ],
+        "net_area_n_norm": 0.0016109097618158133
+      },
+      "rest": {
+        "n_faces": 3944,
+        "outward": 3120,
+        "inward": 824,
+        "degenerate": 0,
+        "pload_agrees_shell": 3944,
+        "V_m3": 0.00038581446138894187,
+        "V_mL": 385.8144613889419,
+        "V_oriented_mL": 448.2073524921888,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 832,
+        "manifold_opposite_edges": 7056,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.0016071295476679849,
+          0.00011012535359282766,
+          -4.336808689942018e-19
+        ],
+        "net_area_n_norm": 0.0016108981893625206,
+        "t": 0.0,
+        "p_Pa": 0.0,
+        "file": "Ainflate_A001.vtk"
+      },
+      "p325": {
+        "n_faces": 3944,
+        "outward": 3120,
+        "inward": 824,
+        "degenerate": 0,
+        "pload_agrees_shell": 3944,
+        "V_m3": 0.00142521149811829,
+        "V_mL": 1425.21149811829,
+        "V_oriented_mL": 725.1259437687676,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 832,
+        "manifold_opposite_edges": 7056,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.008256383877428,
+          -0.00035581152244000596,
+          -1.7237120476625012e-19
+        ],
+        "net_area_n_norm": 0.0082640472270525,
+        "t": 0.0200025,
+        "p_Pa": 32504.062499999996,
+        "file": "Ainflate_A011.vtk"
+      },
+      "p358": {
+        "n_faces": 3944,
+        "outward": 3120,
+        "inward": 824,
+        "degenerate": 0,
+        "pload_agrees_shell": 3944,
+        "V_m3": 0.0018630793329296228,
+        "V_mL": 1863.0793329296228,
+        "V_oriented_mL": 778.7358325379555,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 832,
+        "manifold_opposite_edges": 7056,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.009027741348866244,
+          -0.0005491415918600079,
+          -3.720592220814514e-19
+        ],
+        "net_area_n_norm": 0.009044427585532422,
+        "t": 0.0220065,
+        "p_Pa": 35760.5625,
+        "file": "Ainflate_A012.vtk"
+      }
+    },
+    "finer": {
+      "N": 15778,
+      "density": "finer",
+      "json_rest": {
+        "n_faces": 15776,
+        "outward": 12480,
+        "inward": 3296,
+        "degenerate": 0,
+        "pload_agrees_shell": 15776,
+        "V_m3": 0.0003858139437039673,
+        "V_mL": 385.81394370396725,
+        "V_oriented_mL": 448.2073788754893,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 1664,
+        "manifold_opposite_edges": 29888,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.0016071411363742225,
+          0.00011012551242747035,
+          -1.088437337221776e-19
+        ],
+        "net_area_n_norm": 0.001610909761815863
+      },
+      "rest": {
+        "n_faces": 15776,
+        "outward": 12480,
+        "inward": 3296,
+        "degenerate": 0,
+        "pload_agrees_shell": 15776,
+        "V_m3": 0.00038581450167002226,
+        "V_mL": 385.81450167002225,
+        "V_oriented_mL": 448.2074047779685,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 1664,
+        "manifold_opposite_edges": 29888,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.001607129547668032,
+          0.0001101253535927945,
+          -1.4230153513872246e-19
+        ],
+        "net_area_n_norm": 0.0016108981893625653,
+        "t": 0.0,
+        "p_Pa": 0.0,
+        "file": "Ainflate_A001.vtk"
+      },
+      "p325": {
+        "n_faces": 15776,
+        "outward": 12480,
+        "inward": 3296,
+        "degenerate": 0,
+        "pload_agrees_shell": 15776,
+        "V_m3": 0.0014129836276649316,
+        "V_mL": 1412.9836276649316,
+        "V_oriented_mL": 720.6652413871493,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 1664,
+        "manifold_opposite_edges": 29888,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.00820791445603586,
+          -0.00029609387333999194,
+          -5.0954325733266505e-20
+        ],
+        "net_area_n_norm": 0.00821325339310994,
+        "t": 0.0200039,
+        "p_Pa": 32506.337499999998,
+        "file": "Ainflate_A011.vtk"
+      },
+      "p358": {
+        "n_faces": 15776,
+        "outward": 12480,
+        "inward": 3296,
+        "degenerate": 0,
+        "pload_agrees_shell": 15776,
+        "V_m3": 0.0018446704617707465,
+        "V_mL": 1844.6704617707464,
+        "V_oriented_mL": 773.0218449446296,
+        "V_sign": "positive (shell RH = out of enclosed volume)",
+        "manifold_same_dir_edges": 1664,
+        "manifold_opposite_edges": 29888,
+        "boundary_edges": 0,
+        "net_area_n_m2": [
+          -0.008977432388222652,
+          -0.00050663457198007,
+          -1.9852334701272664e-20
+        ],
+        "net_area_n_norm": 0.008991716792394792,
+        "t": 0.0220012,
+        "p_Pa": 35751.95,
+        "file": "Ainflate_A012.vtk"
+      }
+    }
+  },
+  "contact": {
+    "ship": {
+      "first_kiss": {
+        "t": 0.0286141,
+        "file": "Ainflate_A016.vtk",
+        "max_CONT_N": 1279.9278295158522,
+        "n_nodes": 16,
+        "p_Pa": 46497.9125
+      },
+      "engine": {
+        "first_INTER_limiting_t": 0.00524,
+        "first_remove_secondary_t": 0.02843,
+        "n_remove_secondary": 68,
+        "ANIM_VECT_CONT": false,
+        "ANIM_VECT_PCONT": false,
+        "field_used": "Contact_Forces"
+      },
+      "max_CONT_N": 1279.9278295158522
+    },
+    "fine": {
+      "first_kiss": {
+        "t": 0.0285476,
+        "file": "Ainflate_A016.vtk",
+        "max_CONT_N": 194.8198401831292,
+        "n_nodes": 28,
+        "p_Pa": 46389.85
+      },
+      "engine": {
+        "first_INTER_limiting_t": 0.02726,
+        "first_remove_secondary_t": 0.02847,
+        "n_remove_secondary": 651,
+        "ANIM_VECT_CONT": false,
+        "ANIM_VECT_PCONT": false,
+        "field_used": "Contact_Forces"
+      },
+      "max_CONT_N": 194.8198401831292
+    },
+    "finer": {
+      "first_kiss": {
+        "t": 0.0283981,
+        "file": "Ainflate_A016.vtk",
+        "max_CONT_N": 108.26147288421676,
+        "n_nodes": 104,
+        "p_Pa": 46146.9125
+      },
+      "engine": {
+        "first_INTER_limiting_t": 0.02798,
+        "first_remove_secondary_t": 0.02835,
+        "n_remove_secondary": 94,
+        "ANIM_VECT_CONT": false,
+        "ANIM_VECT_PCONT": false,
+        "field_used": "Contact_Forces"
+      },
+      "max_CONT_N": 108.26147288421676
+    }
+  },
+  "any_inward": true,
+  "any_kiss": true,
+  "stills": [
+    "cont_history.png",
+    "fine_first_kiss_cont.png",
+    "fine_p325_cont.png",
+    "fine_p325_pload.png",
+    "fine_p358_cont.png",
+    "fine_p358_pload.png",
+    "fine_rest_cont.png",
+    "fine_rest_pload.png",
+    "finer_first_kiss_cont.png",
+    "finer_p325_cont.png",
+    "finer_p325_pload.png",
+    "finer_p358_cont.png",
+    "finer_p358_pload.png",
+    "finer_rest_cont.png",
+    "finer_rest_pload.png",
+    "lineup_p325_cont.png",
+    "lineup_p325_pload.png",
+    "lineup_p358_cont.png",
+    "lineup_p358_pload.png",
+    "lineup_rest_cont.png",
+    "lineup_rest_pload.png",
+    "ship_first_kiss_cont.png",
+    "ship_p325_cont.png",
+    "ship_p325_pload.png",
+    "ship_p358_cont.png",
+    "ship_p358_pload.png",
+    "ship_rest_cont.png",
+    "ship_rest_pload.png"
+  ],
+  "frames": [
+    {
+      "key": "rest",
+      "file": "Ainflate_A001.vtk",
+      "label": "rest  p=0",
+      "camera": "rest"
+    },
+    {
+      "key": "p325",
+      "file": "Ainflate_A011.vtk",
+      "label": "32.5 kPa  t\u224820 ms",
+      "camera": "load"
+    },
+    {
+      "key": "p358",
+      "file": "Ainflate_A012.vtk",
+      "label": "35.8 kPa  t\u224822 ms",
+      "camera": "load"
+    }
+  ],
+  "note": "A not relaunched. No finest. \u03bc/\u03c1 locked. If inward>0, flip those quads and regenerate C ship/fine/finer only."
+}
