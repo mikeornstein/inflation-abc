@@ -1,0 +1,26 @@
+#RADIOSS ENGINE
+#---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
+/RUN/Ainflate/1
+0.05
+/TFILE
+0.001
+/ANIM/DT
+0.0 0.002
+/ANIM/VECT/DISP
+/ANIM/VECT/CONT
+/ANIM/ELEM/ENER
+/ANIM/ELEM/HOURG
+/ANIM/SHELL/THIC
+/ANIM/SHELL/TENS/STRAIN/MEMB
+/PRINT/-200
+/DT
+0.9 0.0
+# Nodal STOP at 1e-6: terminate on CFL collapse (do not hang at dt~1e-15).
+# Hang guard only. Kareem CFL fork uses /AMS — not /DT/NODA/CST mass scaling.
+/DT/NODA/STOP
+0.9 1.0e-6
+# Free-free / inertial relief analogue (no /BCS pins).
+# /ADYREL = adaptive dynamic relaxation (OpenRadioss engine).
+# Radioss has no PARAM,INREL — that keyword is OptiStruct only.
+/ADYREL
+/END

@@ -7,6 +7,7 @@ Coarse = Gmsh DelQuad remesh of the ship midplane outline + prism walls.
 Ship  = locked bake meshes/A.json (N=1554).
 Fine  = nested 1-to-4 of the closed all-quad ship shell (2× h; N×4 on a surface).
 Finer = nested 1-to-4 of fine (N=24864). Study meshes may exceed web bake MAX_VERTS.
+Finest = nested 1-to-4 of finer (N=99456). Same rest letter as ship/fine/finer (not Gmsh coarse).
 
 Locked physics (same as A-inflate): LAW42 μ1=MU α1=2, ρ=1130, H0,
 Gapmin=CONTACT_KISS, /SHELL quads only, Ishell=1, free-free /ADYREL.
@@ -351,16 +352,23 @@ def subdivide_closed_quads(pos: np.ndarray, quads, *, check_size: bool = True):
     return new_pos, new_quads, V, gates
 
 
-def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: bool = True):
+def dump_bake(path: Path, pos: np.ndarray, quads, *, meta: dict, check_size: bool = True, skip_tris: bool = False):
     pos0 = [float(v) for v in np.asarray(pos, dtype=float).ravel()]
     quads = [[int(i) for i in q] for q in quads]
     n = len(pos0) // 3
-    split = BakeJSON.split_tris(quads)
-    vol = BakeJSON.volume(pos0, split)
-    if vol < 0:
-        quads = [[q[0], q[3], q[2], q[1]] for q in quads]
+    if skip_tris:
+        vol = float(_vol(np.asarray(pos0, dtype=float).reshape(n, 3), quads))
+        if vol < 0:
+            quads = [[q[0], q[3], q[2], q[1]] for q in quads]
+            vol = -vol
+        split: list = []
+    else:
         split = BakeJSON.split_tris(quads)
-        vol = -vol
+        vol = BakeJSON.volume(pos0, split)
+        if vol < 0:
+            quads = [[q[0], q[3], q[2], q[1]] for q in quads]
+            split = BakeJSON.split_tris(quads)
+            vol = -vol
     gates = MeshQuality.gate_closed_quad_shell(
         n, quads, want_euler=0, check_size=check_size
     )
@@ -468,13 +476,34 @@ def build_finer_from_fine(pos: np.ndarray, quads, V0: float):
     return epos, equads, eV, egates, meta
 
 
-def generate(repo: Path, out_dir: Path, *, finer_only: bool = False, include_finer: bool = False) -> dict:
+def build_finest_from_finer(pos: np.ndarray, quads, V0: float):
+    """Nested 1-to-4 of the finer all-quad shell (N=4×finer; same rest letter)."""
+    epos, equads, eV, egates = subdivide_closed_quads(pos, quads, check_size=False)
+    meta = {
+        "plan": "linear 1-to-4 of closed all-quad finer shell (nested 2× h of finer; N=4×finer)",
+        "role": "finest",
+        "parentN": int(len(pos)),
+        "parentV0_m3": float(V0),
+        "note": "all-quad /SHELL study mesh; same rest letter as ship/fine/finer; not Gmsh coarse",
+    }
+    return epos, equads, eV, egates, meta
+
+
+def generate(
+    repo: Path,
+    out_dir: Path,
+    *,
+    finer_only: bool = False,
+    include_finer: bool = False,
+    finest_only: bool = False,
+    include_finest: bool = False,
+) -> dict:
     mesh_dir = out_dir / "meshes"
     mesh_dir.mkdir(parents=True, exist_ok=True)
     summary_path = out_dir / "mesh-summary.json"
     summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
 
-    if not finer_only:
+    if not finer_only and not finest_only:
         cpos, cquads, cV, _cg, cmeta = build_coarse(repo)
         cmeta_out = dump_bake(mesh_dir / "A-coarse.json", cpos, cquads, meta=cmeta)
 
@@ -498,7 +527,7 @@ def generate(repo: Path, out_dir: Path, *, finer_only: bool = False, include_fin
             "fine": {**fmeta_out, "V0_mL": fV * 1e6},
         })
 
-    if include_finer or finer_only:
+    if (include_finer or finer_only) and not finest_only:
         fine_path = mesh_dir / "A-fine.json"
         if not fine_path.exists():
             raise SystemExit("A-fine.json missing — run without --finer-only first")
@@ -508,6 +537,22 @@ def generate(repo: Path, out_dir: Path, *, finer_only: bool = False, include_fin
             mesh_dir / "A-finer.json", xpos, xquads, meta=xmeta, check_size=False
         )
         summary["finer"] = {**xmeta_out, "V0_mL": xV * 1e6}
+
+    if include_finest or finest_only:
+        finer_path = mesh_dir / "A-finer.json"
+        if not finer_path.exists():
+            raise SystemExit("A-finer.json missing — run --finer-only first")
+        xpos, xquads, xV, _xmeta = load_closed_bake(finer_path)
+        zpos, zquads, zV, _zg, zmeta = build_finest_from_finer(xpos, xquads, xV)
+        zmeta_out = dump_bake(
+            mesh_dir / "A-finest.json",
+            zpos,
+            zquads,
+            meta=zmeta,
+            check_size=False,
+            skip_tris=True,
+        )
+        summary["finest"] = {**zmeta_out, "V0_mL": zV * 1e6}
 
     summary["law"] = (
         "LAW42 μ1=MU α1=2 ρ=1130 H0 Gapmin=CONTACT_KISS Ishell=1 /ADYREL — not retuned"
@@ -519,7 +564,7 @@ def generate(repo: Path, out_dir: Path, *, finer_only: bool = False, include_fin
         "converged dynamic ≠ ABC apples"
     )
     summary_path.write_text(json.dumps(summary, indent=2) + "\n")
-    for key in ("coarse", "ship", "fine", "finer"):
+    for key in ("coarse", "ship", "fine", "finer", "finest"):
         if key in summary and isinstance(summary[key], dict) and "N" in summary[key]:
             print("{k:6s} N={N} quads={nQuads} V0={V0_mL:.4g} mL".format(k=key, **summary[key]))
     ns = [summary[k]["N"] for k in ("coarse", "ship", "fine") if k in summary]
@@ -528,6 +573,9 @@ def generate(repo: Path, out_dir: Path, *, finer_only: bool = False, include_fin
     if "finer" in summary and "fine" in summary:
         if not (summary["fine"]["N"] < summary["finer"]["N"]):
             raise SystemExit("finer is not denser than fine")
+    if "finest" in summary and "finer" in summary:
+        if not (summary["finer"]["N"] < summary["finest"]["N"]):
+            raise SystemExit("finest is not denser than finer")
     return summary
 
 
@@ -545,12 +593,19 @@ def main(argv=None) -> int:
         action="store_true",
         help="also write nested finer (N=4×fine) after the coarse/ship/fine ladder",
     )
+    ap.add_argument(
+        "--finest-only",
+        action="store_true",
+        help="1-to-4 of existing A-finer.json only; do not remesh lower rungs",
+    )
     args = ap.parse_args(argv)
     generate(
         repo,
         args.out_dir,
         finer_only=args.finer_only,
         include_finer=args.with_finer or args.finer_only,
+        finest_only=args.finest_only,
+        include_finest=args.finest_only,
     )
     return 0
 

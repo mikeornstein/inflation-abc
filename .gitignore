@@ -6,6 +6,9 @@ radioss/A-refine/**/run/
 radioss/A-refine/**/artifacts/frames/
 radioss/A-refine/**/artifacts/A-inflate.gif
 radioss/A-refine/**/artifacts/A-inflate.mp4
+radioss/A-refine/meshes/A-finest.json
+radioss/A-refine/finest/Ainflate_0000.rad
+radioss/A-refine/stills/*.png
 __pycache__/
 *.pyc
 .venv/

@@ -112,5 +112,31 @@
     "parentV0_m3": 0.00035398478196820216,
     "note": "all-quad /SHELL study mesh; exceeds web bake MAX_VERTS; does not replace ship meshes/A.json",
     "V0_mL": 353.9847819681893
+  },
+  "finest": {
+    "letter": "A",
+    "DEPTH": 0.05,
+    "N": 99456,
+    "nQuads": 99456,
+    "nTris": 0,
+    "nOrphanCapTris": 0,
+    "nMidTris": 0,
+    "volume_m3": 0.0003539847819682644,
+    "gates": {
+      "N": 99456,
+      "nQuads": 99456,
+      "nTris": 0,
+      "nEdges": 198912,
+      "freeEdges": 0,
+      "nonManifold": 0,
+      "euler": 0,
+      "components": 1
+    },
+    "plan": "linear 1-to-4 of closed all-quad finer shell (nested 2\u00d7 h of finer; N=4\u00d7finer)",
+    "role": "finest",
+    "parentN": 24864,
+    "parentV0_m3": 0.00035398478196818866,
+    "note": "all-quad /SHELL study mesh; same rest letter as ship/fine/finer; not Gmsh coarse",
+    "V0_mL": 353.9847819682644
   }
 }

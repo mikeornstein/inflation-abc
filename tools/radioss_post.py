@@ -323,20 +323,42 @@ def look_font(size: int):
     return ImageFont.load_default()
 
 
-def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
-    """Orthographic +Z view, Y up. Fill + stroke **quads** (no diagonal bleed)."""
+def render_frame(
+    x,
+    quads,
+    lams_quad,
+    hud,
+    size=720,
+    warn=False,
+    camera=None,
+    draw_edges=True,
+    project=None,
+    rest_fill=None,
+    warn_label="WARN  first λ_max ≥ 2",
+):
+    """Orthographic +Z view (or `project`), Y up. Fill + stroke **quads**."""
     w = h = size
     img = np.zeros((h, w, 3), dtype=np.uint8)
     img[:] = (18, 18, 22)
-    xy = x[:, :2]
-    xmin, ymin = xy.min(axis=0)
-    xmax, ymax = xy.max(axis=0)
-    span = max(xmax - xmin, ymax - ymin, 1e-6) * 1.18
-    cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
+
+    def xy_of(p):
+        if project is None:
+            return float(p[0]), float(p[1])
+        return project(p)
+
+    xy = np.asarray([xy_of(p) for p in x], dtype=np.float64)
+    if camera is not None:
+        cx, cy, span = (float(camera[0]), float(camera[1]), float(camera[2]))
+    else:
+        xmin, ymin = xy.min(axis=0)
+        xmax, ymax = xy.max(axis=0)
+        span = max(xmax - xmin, ymax - ymin, 1e-6) * 1.18
+        cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
 
     def to_px(p):
-        px = (p[0] - cx) / span * (w * 0.92) + w * 0.5
-        py = h * 0.5 - (p[1] - cy) / span * (h * 0.92)
+        u, v = xy_of(p)
+        px = (u - cx) / span * (w * 0.92) + w * 0.5
+        py = h * 0.5 - (v - cy) / span * (h * 0.92)
         return px, py
 
     faces = []
@@ -351,20 +373,25 @@ def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
         return tuple(int(c0[k] + (c1[k] - c0[k]) * t) for k in range(3))
 
     edge = (52, 52, 60)
+    beige = rest_fill if rest_fill is not None else None
     for zc, fi, q in faces:
-        lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
-        t = (lam - 1.0) / max(WARN_LAM - 1.0, 1e-6)
-        col = lerp((210, 210, 214), (196, 72, 28), t)
+        if beige is not None:
+            col = beige
+        else:
+            lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
+            t = (lam - 1.0) / max(WARN_LAM - 1.0, 1e-6)
+            col = lerp((210, 210, 214), (196, 72, 28), t)
         # same color on both CST halves so the diagonal does not read as a tri mesh
         _fill_tri(img, [to_px(x[q[0]]), to_px(x[q[1]]), to_px(x[q[2]])], col)
         _fill_tri(img, [to_px(x[q[0]]), to_px(x[q[2]]), to_px(x[q[3]])], col)
 
     pil = Image.fromarray(img, "RGB")
     draw = ImageDraw.Draw(pil)
-    for zc, fi, q in faces:
-        pts = [to_px(x[q[i]]) for i in range(4)]
-        ring = pts + [pts[0]]
-        draw.line(ring, fill=edge, width=1)
+    if draw_edges:
+        for zc, fi, q in faces:
+            pts = [to_px(x[q[i]]) for i in range(4)]
+            ring = pts + [pts[0]]
+            draw.line(ring, fill=edge, width=1)
     font = look_font(18)
     font_b = look_font(22)
     y = 10
@@ -373,7 +400,7 @@ def render_frame(x, quads, lams_quad, hud, size=720, warn=False):
         y += 22
     if warn:
         draw.rectangle([10, h - 48, w - 10, h - 12], outline=(220, 90, 40), width=2)
-        draw.text((18, h - 44), "WARN  first λ_max ≥ 2", fill=(255, 200, 140), font=font_b)
+        draw.text((18, h - 44), warn_label, fill=(255, 200, 140), font=font_b)
     return pil
 
 

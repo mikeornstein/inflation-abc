@@ -3,7 +3,7 @@
 # μ and ρ are never retuned. Ishell=1. Same PLOAD unless a labeled Kareem fork.
 #
 #   bash radioss/A-refine/run.sh              # coarse / ship / fine
-#   bash radioss/A-refine/run.sh --finer-only # nested 1-to-4 of fine (does not wipe lower tapes)
+#   bash radioss/A-refine/run.sh --finest-only # nested 1-to-4 of finer (does not wipe lower tapes)
 set -euo pipefail
 DECK_ROOT="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DECK_ROOT/../.." && pwd)"
@@ -16,9 +16,11 @@ source "$RADIOSS_ROOT/env.sh"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 
 FINER_ONLY=0
+FINEST_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --finer-only) FINER_ONLY=1 ;;
+    --finest-only) FINEST_ONLY=1 ;;
   esac
 done
 
@@ -51,7 +53,14 @@ run_one() {
   echo "done $dens. artifacts in $deck/artifacts"
 }
 
-if [[ "$FINER_ONLY" -eq 1 ]]; then
+if [[ "$FINEST_ONLY" -eq 1 ]]; then
+  python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT" --finest-only
+  python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
+    --mesh "$DECK_ROOT/meshes/A-finest.json" --out-dir "$DECK_ROOT/finest" \
+    --note "A-refine finest 1-to-4 of finer; same LAW42/PLOAD/ADYREL; do not retune μ/ρ"
+  run_one finest "${FINEST_TIMEOUT:-2400}" "--metrics-only"
+  python3 "$ROOT/tools/refine_same_load.py" --root "$DECK_ROOT" --session-rerun finest
+elif [[ "$FINER_ONLY" -eq 1 ]]; then
   python3 "$ROOT/tools/refine_letter_a.py" --out-dir "$DECK_ROOT" --finer-only
   python3 "$ROOT/tools/mesh_to_radioss.py" --allow-n --check \
     --mesh "$DECK_ROOT/meshes/A-finer.json" --out-dir "$DECK_ROOT/finer" \
