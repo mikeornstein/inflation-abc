@@ -1,0 +1,13 @@
+{
+  "engine_elapsed_s": 1068.66,
+  "starter_s": 1.96,
+  "starter_plus_engine_s": 1070.62,
+  "cycles": 44029,
+  "threads": 4,
+  "source": "Ainflate_0001.out (prior tape; not re-run this session)",
+  "rerun_this_session": true,
+  "termination": "NORMAL",
+  "density": "finer-stop1e7",
+  "N": 71230,
+  "note": "B-refine finer \u2014 STOP Tmin=1e-7"
+}

@@ -1,0 +1,393 @@
+{
+  "rows": [
+    {
+      "density": "ship",
+      "N": 988,
+      "n_quads": 986,
+      "plan": "ship meshes/C.json \u2014 paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0220083,
+      "p_Pa": 35763.4875,
+      "lam_max": 2.043601779673898,
+      "V_mL": 2221.463110605701,
+      "Psi_J": 10.29104673089715,
+      "gap_mm": 0.00018418833800247104,
+      "punch": false,
+      "ams": false,
+      "metrics_only": false,
+      "cfl_after_lambda2": true,
+      "lam_p90": 1.4525047162403455,
+      "lam_aw_mean": 1.3059556608017695
+    },
+    {
+      "density": "fine",
+      "N": 3946,
+      "n_quads": 3944,
+      "plan": "linear 1-to-4 of closed all-quad ship shell (nested 2\u00d7 h; N\u00d74 on a surface)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.00401147,
+      "p_Pa": 6518.638749999999,
+      "lam_max": 2.235320180022033,
+      "V_mL": 471.4274807438628,
+      "Psi_J": 0.39280838682277974,
+      "gap_mm": 1.1438539139516533e-06,
+      "punch": false,
+      "ams": false,
+      "metrics_only": false,
+      "cfl_after_lambda2": true,
+      "lam_p90": 1.1124831062130163,
+      "lam_aw_mean": 1.0685280000650297
+    },
+    {
+      "density": "finer",
+      "N": 15778,
+      "n_quads": 15776,
+      "plan": "linear 1-to-4 of closed all-quad fine shell (nested 2\u00d7 h of fine; N=4\u00d7fine)",
+      "reached_lambda2": true,
+      "cfl_before_lambda2": false,
+      "t": 0.0240031,
+      "p_Pa": 39005.0375,
+      "lam_max": 2.165274520271087,
+      "V_mL": 2492.4472062691984,
+      "Psi_J": 12.635913380369976,
+      "gap_mm": null,
+      "punch": false,
+      "ams": false,
+      "metrics_only": true,
+      "cfl_after_lambda2": true,
+      "lam_p90": 1.4587014792471586,
+      "lam_aw_mean": 1.3043404854580067
+    }
+  ],
+  "pairs": [
+    {
+      "dp": 0.8177292203395992,
+      "dv": 0.7877851410211696,
+      "dlam": 0.09381397210308157,
+      "dp_ok": false,
+      "dv_ok": false,
+      "dlam_ok": false,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": false,
+      "pair": "ship\u2192fine",
+      "Ns": "988 \u2192 3946"
+    },
+    {
+      "dp": 4.983616978314683,
+      "dv": 4.287021457332907,
+      "dlam": 0.03133585084453352,
+      "dp_ok": false,
+      "dv_ok": false,
+      "dlam_ok": false,
+      "lam_band_ok": true,
+      "psi_ok": true,
+      "pass": false,
+      "pair": "fine\u2192finer",
+      "Ns": "3946 \u2192 15778"
+    }
+  ],
+  "verdict": "letter C: volume / \u03bb_aw settled on last nested pair; \u03bb_max climbing at holes/creases is a sharp-hole singularity (Mike 2026-09-12 \u2014 perfectly sharp hole in the geometry input; real creases have a small radius). Do not chase \u03bb_max with more global refine. Not mesh-failed. p325 fine\u2192finer \u0394V=0.86% \u0394\u03bb_max=5.55% \u0394\u03bb_aw=0.70%; p358 fine\u2192finer \u0394V=0.99% \u0394\u03bb_max=6.11% \u0394\u03bb_aw=0.72%",
+  "same_load": {
+    "letter": "C",
+    "nested": [
+      "ship",
+      "fine",
+      "finer"
+    ],
+    "camera": {
+      "az": 0.55,
+      "el": 0.38,
+      "rest": {
+        "cx": 1.414122579473584e-05,
+        "cy": 0.0020282114940870302,
+        "span": 0.16020874334671883
+      },
+      "load": {
+        "cx": -0.30072632877645156,
+        "cy": -0.044936177623334746,
+        "span": 0.329037645555129
+      }
+    },
+    "timings": {
+      "ship": {
+        "density": "ship",
+        "N": 988,
+        "engine_elapsed_s": 1.39,
+        "starter_s": 0.35,
+        "starter_plus_engine_s": 1.74,
+        "cycles": 1473,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      },
+      "fine": {
+        "density": "fine",
+        "N": 3946,
+        "engine_elapsed_s": 7.99,
+        "starter_s": 0.35,
+        "starter_plus_engine_s": 8.34,
+        "cycles": 2649,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      },
+      "finer": {
+        "density": "finer",
+        "N": 15778,
+        "engine_elapsed_s": 52.56,
+        "starter_s": 0.55,
+        "starter_plus_engine_s": 53.11,
+        "cycles": 7079,
+        "threads": 4,
+        "source": "Ainflate_0001.out (timed this session)",
+        "rerun_this_session": true,
+        "termination": "NORMAL"
+      }
+    },
+    "session_forks": {},
+    "loads": {
+      "p325": [
+        {
+          "density": "ship",
+          "N": 988,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "t_target": 0.02,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200229,
+          "p_Pa": 32537.212499999998,
+          "lam_max": 1.9071694834325545,
+          "V_mL": 1806.4148669408453,
+          "Psi_J": 7.651828084330378,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.2705533465069023,
+          "lam_p90": 1.39300682714066,
+          "lambda_field": {
+            "lam_max": 1.9071694834325545,
+            "lam_min": 1.0991838249298036,
+            "lam_mean": 1.271046666961039,
+            "lam_aw_mean": 1.2705533465069023,
+            "lam_p50": 1.2412058003095503,
+            "lam_p90": 1.39300682714066,
+            "lam_p99": 1.6737781831978562,
+            "n_quads": 986
+          }
+        },
+        {
+          "density": "fine",
+          "N": 3946,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "t_target": 0.02,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200025,
+          "p_Pa": 32504.062499999996,
+          "lam_max": 1.7446131415203274,
+          "V_mL": 1425.21149811829,
+          "Psi_J": 6.054367026817208,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.2202287426088896,
+          "lam_p90": 1.3310156808065075,
+          "lambda_field": {
+            "lam_max": 1.7446131415203274,
+            "lam_min": 1.0615075088436112,
+            "lam_mean": 1.2192567724384844,
+            "lam_aw_mean": 1.2202287426088896,
+            "lam_p50": 1.1931211531609942,
+            "lam_p90": 1.3310156808065075,
+            "lam_p99": 1.5419548691945817,
+            "n_quads": 3944
+          }
+        },
+        {
+          "density": "finer",
+          "N": 15778,
+          "load": "p325",
+          "p_target_Pa": 32500.0,
+          "t_target": 0.02,
+          "frame": 10,
+          "file": "Ainflate_A011.vtk",
+          "t": 0.0200039,
+          "p_Pa": 32506.337499999998,
+          "lam_max": 1.8414236431919297,
+          "V_mL": 1412.9836276649316,
+          "Psi_J": 5.861181507625156,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.211685126554473,
+          "lam_p90": 1.321150530754941,
+          "lambda_field": {
+            "lam_max": 1.8414236431919297,
+            "lam_min": 1.0360103967019236,
+            "lam_mean": 1.2104251467767104,
+            "lam_aw_mean": 1.211685126554473,
+            "lam_p50": 1.186398859699609,
+            "lam_p90": 1.321150530754941,
+            "lam_p99": 1.521299352428024,
+            "n_quads": 15776
+          }
+        }
+      ],
+      "p358": [
+        {
+          "density": "ship",
+          "N": 988,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "t_target": 0.022,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220083,
+          "p_Pa": 35763.4875,
+          "lam_max": 2.043601779673898,
+          "V_mL": 2221.463110605701,
+          "Psi_J": 10.29104673089715,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.3059556608017695,
+          "lam_p90": 1.4525047162403455,
+          "lambda_field": {
+            "lam_max": 2.043601779673898,
+            "lam_min": 1.0751465173910104,
+            "lam_mean": 1.3057938217901512,
+            "lam_aw_mean": 1.3059556608017695,
+            "lam_p50": 1.269756237863171,
+            "lam_p90": 1.4525047162403455,
+            "lam_p99": 1.7725147751650427,
+            "n_quads": 986
+          }
+        },
+        {
+          "density": "fine",
+          "N": 3946,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "t_target": 0.022,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220065,
+          "p_Pa": 35760.5625,
+          "lam_max": 1.8709375369229884,
+          "V_mL": 1863.0793329296228,
+          "Psi_J": 8.600473016773554,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.2595150240581467,
+          "lam_p90": 1.3908555336060777,
+          "lambda_field": {
+            "lam_max": 1.8709375369229884,
+            "lam_min": 1.0571838224875625,
+            "lam_mean": 1.258246434311847,
+            "lam_aw_mean": 1.2595150240581467,
+            "lam_p50": 1.2295860891005452,
+            "lam_p90": 1.3908555336060777,
+            "lam_p99": 1.644048973660281,
+            "n_quads": 3944
+          }
+        },
+        {
+          "density": "finer",
+          "N": 15778,
+          "load": "p358",
+          "p_target_Pa": 35750.0,
+          "t_target": 0.022,
+          "frame": 11,
+          "file": "Ainflate_A012.vtk",
+          "t": 0.0220012,
+          "p_Pa": 35751.95,
+          "lam_max": 1.9852820715220274,
+          "V_mL": 1844.6704617707464,
+          "Psi_J": 8.359019486851036,
+          "punch": false,
+          "picked_by": "p",
+          "lam_aw_mean": 1.2504184552690392,
+          "lam_p90": 1.379460371656407,
+          "lambda_field": {
+            "lam_max": 1.9852820715220274,
+            "lam_min": 1.0396978127787562,
+            "lam_mean": 1.2488645979873785,
+            "lam_aw_mean": 1.2504184552690392,
+            "lam_p50": 1.2237076293901537,
+            "lam_p90": 1.379460371656407,
+            "lam_p99": 1.6213223545715414,
+            "n_quads": 15776
+          }
+        }
+      ]
+    },
+    "pairs": {
+      "p325": [
+        {
+          "pair": "ship\u2192fine",
+          "Ns": "988 \u2192 3946",
+          "load": "p325",
+          "dv": 0.21102758607612737,
+          "dlam": 0.08523434509850461,
+          "daw": 0.03960841474021441,
+          "dpsi": 0.20876855045717696,
+          "dv_ok": false,
+          "dlam_ok": false,
+          "daw_ok": false,
+          "pass": false
+        },
+        {
+          "pair": "fine\u2192finer",
+          "Ns": "3946 \u2192 15778",
+          "load": "p325",
+          "dv": 0.0085796883266117,
+          "dlam": 0.055491099641286484,
+          "daw": 0.007001651211845759,
+          "dpsi": 0.031908458528588694,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        }
+      ],
+      "p358": [
+        {
+          "pair": "ship\u2192fine",
+          "Ns": "988 \u2192 3946",
+          "load": "p358",
+          "dv": 0.16132780957067602,
+          "dlam": 0.0844901606899472,
+          "daw": 0.03556065350267046,
+          "dpsi": 0.16427616726760466,
+          "dv_ok": false,
+          "dlam_ok": false,
+          "daw_ok": false,
+          "pass": false
+        },
+        {
+          "pair": "fine\u2192finer",
+          "Ns": "3946 \u2192 15778",
+          "load": "p358",
+          "dv": 0.009880884207936034,
+          "dlam": 0.06111616894869414,
+          "daw": 0.007222278905255545,
+          "dpsi": 0.02807444770207522,
+          "dv_ok": true,
+          "dlam_ok": false,
+          "daw_ok": true,
+          "pass": false
+        }
+      ]
+    },
+    "station_notes": [],
+    "note": "Letter C. Grade at the same PLOAD, not first \u03bb\u22652. engine_elapsed_s is OpenRadioss ELAPSED TIME; post/contact-gap is not solve time. Peak \u03bb_max at holes/creases is a sharp-hole singularity \u2014 do not chase with global refine. Volume / \u03bb_aw is the useful signal.",
+    "gates": {
+      "dV": 0.05,
+      "dlam_max": 0.02,
+      "dlam_aw": 0.02
+    }
+  }
+}

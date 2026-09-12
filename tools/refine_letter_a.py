@@ -482,37 +482,47 @@ def _quad_xy_ok(pos, q, sign: float) -> bool:
 
 
 def fill_even_cycle(cycle, pos, sign: float):
-    """Fill an even-boundary planar cycle with quads.
+    """Fill an even-boundary planar cycle with quads. No hanging nodes.
 
-    n=4 → one quad. n>4 → one interior Steiner (centroid) and n/2 quads
-    from paired fan triangles. Boundary edges stay, so neighbors do not
-    pick up hanging nodes. Returns (new_quads, new_xyz or None).
+    n=4 → one quad. n>4 → boundary fan from a cycle vertex (n/2−1 quads),
+    no interior Steiner. Centroid Steiners on C's ear octagons made bowties
+    that explode under PLOAD. Returns (new_quads, new_xyz or None).
     """
     n = len(cycle)
     if n < 4 or n % 2:
         raise ValueError(f"cycle n={n} cannot be all-quad")
+    cycle = [int(i) for i in cycle]
     if n == 4:
-        q = tuple(int(i) for i in cycle)
+        q = tuple(cycle)
         if not _quad_xy_ok(pos, q, sign):
             q = (q[0], q[3], q[2], q[1])
         if not _quad_xy_ok(pos, q, 0.0):
             raise ValueError("degenerate 4-cycle")
         return [q], None
-    xyz = pos[list(cycle)].mean(axis=0)
-    quads = []
-    for i in range(0, n, 2):
-        quads.append(
-            (
-                int(cycle[i]),
-                int(cycle[(i + 1) % n]),
-                int(cycle[(i + 2) % n]),
-                -1,
+
+    def try_fan(origin: int):
+        quads = []
+        for i in range(1, n - 1, 2):
+            q = (
+                cycle[origin],
+                cycle[(origin + i) % n],
+                cycle[(origin + i + 1) % n],
+                cycle[(origin + i + 2) % n],
             )
-        )
-    a0 = _tri_xy_area(pos, cycle[0], cycle[1], cycle[2])
-    if sign != 0.0 and a0 * sign < 0:
-        quads = [(q[0], q[3], q[2], q[1]) for q in quads]
-    return quads, xyz
+            if not _quad_xy_ok(pos, q, sign):
+                q = (q[0], q[3], q[2], q[1])
+            if not _quad_xy_ok(pos, q, 0.0):
+                return None
+            quads.append(q)
+        if len(quads) != n // 2 - 1:
+            return None
+        return quads
+
+    for origin in range(n):
+        quads = try_fan(origin)
+        if quads is not None:
+            return quads, None
+    raise ValueError(f"no convex all-quad fan for cycle n={n}")
 
 
 def eat_even_cap_patches(pos: np.ndarray, quads, leftover):
@@ -629,34 +639,34 @@ def eat_even_cap_patches(pos: np.ndarray, quads, leftover):
     return pos, quads, leftover, {"eaten": eaten, "steiners": n_steiners}
 
 
-def close_to_all_quad(pos: np.ndarray, quads, leftover, *, want_euler: int | None):
+def close_to_all_quad(pos: np.ndarray, quads, leftover, *, want_euler: int | None, letter: str = "A"):
     """Pair leftovers that can become /SHELL without Gmsh midplane remesh.
 
-    Even-patch eat is skipped when it would change Euler characteristic
-    (letter B through-holes look like even cap cycles; filling them caps genus).
-    Remaining unpaired tris become quads via one conforming mixed 1-to-4.
+    Even-patch eat is A-only. On B it caps through-holes (euler −2→2). On C
+    the 8-cycle ear fill makes bowtie /SHELL that explode under PLOAD and then
+    fail TYPE19 on the finer 1-to-4. Unpaired tris → one conforming mixed 1-to-4.
     """
     pos = np.asarray(pos, dtype=float)
     quads = [tuple(int(i) for i in q) for q in quads]
     leftover = [tuple(int(i) for i in t) for t in leftover]
-    euler0 = MeshQuality.counts(len(pos), quads, leftover)["euler"]
-    pos_e, quads_e, leftover_e, eat_info = eat_even_cap_patches(pos, quads, leftover)
-    euler1 = MeshQuality.counts(len(pos_e), quads_e, leftover_e)["euler"]
-    if leftover and eat_info["eaten"] and euler1 != euler0:
-        eat_info = {
-            "eaten": 0,
-            "steiners": 0,
-            "skipped": f"even-patch would change euler {euler0}→{euler1}",
-        }
+    note = "paired orphans"
+    if leftover and letter != "B":
+        pos_e, quads_e, leftover_e, eat_info = eat_even_cap_patches(pos, quads, leftover)
+        if leftover_e == [] and eat_info["eaten"]:
+            pos, quads, leftover = pos_e, quads_e, leftover_e
+            note = (
+                f"paired orphans; even-patch ate {eat_info['eaten']} leftover tris"
+                f" (+{eat_info['steiners']} cap Steiners; boundary fan, no Steiner)"
+            )
+        elif leftover:
+            note = (
+                f"paired orphans; even-patch incomplete on {letter} "
+                f"(ate {eat_info['eaten']}) — mixed 1-to-4 of leftover"
+            )
+    elif leftover:
         note = (
-            f"paired orphans; even-patch skipped (would change euler "
-            f"{euler0}→{euler1} — through-holes stay open)"
-        )
-    else:
-        pos, quads, leftover = pos_e, quads_e, leftover_e
-        note = (
-            f"paired orphans; even-patch ate {eat_info['eaten']} leftover tris"
-            f" (+{eat_info['steiners']} cap Steiners)"
+            f"paired orphans; even-patch skipped on letter {letter} "
+            "(through-holes stay open) — mixed 1-to-4 of leftover"
         )
     if leftover:
         n_left = len(leftover)
@@ -745,7 +755,7 @@ def ship_closed(repo: Path, letter: str = "A"):
         gates = MeshQuality.gate_closed_quad_shell(len(pos), quads, want_euler=0)
         return pos, quads, V, gates, mesh, "ship meshes/A.json (quadify orphan caps; midplane not remeshed)"
     pos, quads, leftover, V, gates, note = close_to_all_quad(
-        pos, quads, leftover, want_euler=want_euler
+        pos, quads, leftover, want_euler=want_euler, letter=letter
     )
     if leftover:
         raise SystemExit(f"letter {letter} still has {len(leftover)} unpaired tris")

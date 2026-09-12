@@ -1,0 +1,3 @@
+frame,file,t,p_Pa,lam_max,V_m3,V_mL,Psi_J,Psi_neg_elems,gap_m,gap_mm,gap_signed_m,punch,n_quads,n_tris
+0,Ainflate_A001.vtk,0.0,0.0,1.0000000074505808,0.00039503226734790816,395.03226734790815,0.0,0,nan,nan,nan,False,71232,0
+1,Ainflate_A002.vtk,0.00107952,1754.22,1.2076696258280213,0.00041505467047153635,415.0546704715363,0.008304799176385465,0,nan,nan,nan,False,71232,0

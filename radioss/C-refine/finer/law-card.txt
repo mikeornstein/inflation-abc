@@ -19,6 +19,6 @@ Contact / load
   IR      /ADYREL (engine) + /DAMP Rayleigh α=80 1/s (starter) — explicit free-free
           OpenRadioss has no PARAM,INREL (OptiStruct). Closed /PLOAD is self-equilibrated.
   AMS     = no
-  V0      = 0.00038416281 m^3
-  mesh    = N=15810  /SHELL=15808  /SH3N=0  (source quads=15808 orphan faceTris=0 paired)
+  V0      = 0.00038581394 m^3
+  mesh    = N=15778  /SHELL=15776  /SH3N=0  (source quads=15776 orphan faceTris=0 paired)
   load    = dynamic PLOAD ramp (not Chiron QS) until a QS-ish tape exists

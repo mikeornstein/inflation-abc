@@ -63,14 +63,17 @@ def nested_present(root: Path, summary: dict | None = None) -> tuple[str, ...]:
 
 
 def resolve_deck(root: Path, dens: str) -> Path:
-    """Prefer a labeled finest fork that has ANIM past rest."""
+    """Prefer a labeled CFL fork that has ANIM past rest."""
+    names = [f"{dens}-stop1e7", f"{dens}-stop5e7", f"{dens}-ams"]
     if dens == "finest":
-        for name in ("finest-stop5e7", "finest-ams"):
-            fork = root / "forks" / name
-            n_anim = len(list((fork / "run").glob("AinflateA0*"))) if (fork / "run").exists() else 0
-            n_vtk = len(list((fork / "run").glob("Ainflate_A0*.vtk"))) if (fork / "run").exists() else 0
-            if n_anim > 2 or n_vtk > 2:
-                return fork
+        names = ["finest-stop5e7", "finest-ams"] + names
+    for name in names:
+        fork = root / "forks" / name
+        n_anim = len(list((fork / "run").glob("AinflateA0*"))) if (fork / "run").exists() else 0
+        n_vtk = len(list((fork / "run").glob("Ainflate_A0*.vtk"))) if (fork / "run").exists() else 0
+        grade = (fork / "run" / "Ainflate_A011.vtk").exists() or list((fork / "run").glob("AinflateA011*"))
+        if grade or ((n_anim > 2 or n_vtk > 2) and dens == "finest"):
+            return fork
     return root / dens
 LOADS = (
     {"key": "p325", "p_Pa": 32500.0, "t": 0.020, "label": "32.5 kPa", "t_ms": 20},
@@ -519,6 +522,38 @@ def main(argv=None) -> int:
         session_forks["finest-ams"] = at
         (ams / "artifacts").mkdir(parents=True, exist_ok=True)
         (ams / "artifacts" / "timing.json").write_text(json.dumps(at, indent=2) + "\n")
+    forks_dir = root / "forks"
+    if forks_dir.exists():
+        for fork in sorted(forks_dir.iterdir()):
+            if not fork.is_dir() or fork.name in session_forks:
+                continue
+            if not (fork / "run" / "Ainflate_0001.out").exists():
+                continue
+            ft = parse_timing(fork / "run")
+            ft["rerun_this_session"] = True
+            ft["density"] = fork.name
+            parent = fork.name.split("-")[0]
+            ft["N"] = int((summary.get(parent) or {}).get("N") or 0)
+            note_p = fork / "FORK.md"
+            ft["note"] = (
+                note_p.read_text().splitlines()[0].lstrip("# ").strip()
+                if note_p.exists()
+                else fork.name
+            )
+            session_forks[fork.name] = ft
+            (fork / "artifacts").mkdir(parents=True, exist_ok=True)
+            (fork / "artifacts" / "timing.json").write_text(json.dumps(ft, indent=2) + "\n")
+    for dens in nested:
+        vanilla_d = root / dens
+        used = resolve_deck(root, dens)
+        key = f"{dens}-vanilla"
+        if vanilla_d.resolve() != used.resolve() and (vanilla_d / "run" / "Ainflate_0001.out").exists():
+            vt = parse_timing(vanilla_d / "run")
+            vt["rerun_this_session"] = dens in session
+            vt["density"] = key
+            vt["N"] = int((summary.get(dens) or {}).get("N") or 0)
+            vt["note"] = f"vanilla {dens} STOP 1e-6 (not the nested-grade row; see forks/)"
+            session_forks[key] = vt
 
     note = (
         f"Letter {letter}. Grade at the same PLOAD, not first λ≥2. "

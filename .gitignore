@@ -14,6 +14,8 @@ radioss/A-refine/stills/*.png
 radioss/A-refine/**/artifacts/*.png
 radioss/B-refine/meshes/B-finer.json
 radioss/B-refine/finer/Ainflate_0000.rad
+radioss/B-refine/forks/**/Ainflate_0000.rad
+radioss/B-refine/forks/**/run/
 radioss/B-refine/**/run/
 radioss/B-refine/**/artifacts/frames/
 radioss/B-refine/**/artifacts/A-inflate.gif

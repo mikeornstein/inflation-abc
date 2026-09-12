@@ -1,0 +1,12 @@
+{
+  "density": "ship",
+  "N": 988,
+  "engine_elapsed_s": 1.39,
+  "starter_s": 0.35,
+  "starter_plus_engine_s": 1.74,
+  "cycles": 1473,
+  "threads": 4,
+  "source": "Ainflate_0001.out (timed this session)",
+  "rerun_this_session": true,
+  "termination": "NORMAL"
+}

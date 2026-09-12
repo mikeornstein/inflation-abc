@@ -1,0 +1,16 @@
+{
+  "letter": "C",
+  "az": 0.55,
+  "el": 0.38,
+  "rest": {
+    "cx": 1.414122579473584e-05,
+    "cy": 0.0020282114940870302,
+    "span": 0.16020874334671883
+  },
+  "load": {
+    "cx": -0.30072632877645156,
+    "cy": -0.044936177623334746,
+    "span": 0.329037645555129
+  },
+  "note": "Letter C: rest camera fitted to undeformed ship. Load camera is the same at 32.5 and 35.8 kPa, fitted to nested inflated AABB."
+}

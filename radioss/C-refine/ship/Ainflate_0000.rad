@@ -14,9 +14,9 @@
 #   ρ       = 1130 kg/m^3  # Desmopan 85085A ISO 1183-1; McMaster 1446T11 density not published
 #   Gapmin  = 0.000762 m  # CONTACT_KISS = max(2*H0, 1e-4)
 #   WARN_LAM= 2
-# Mesh 990 nodes, 988 /SHELL quads (source 988 quads + 0 orphan faceTris paired; SH3N=0)
+# Mesh 988 nodes, 986 /SHELL quads (source 986 quads + 0 orphan faceTris paired; SH3N=0)
 # Midplane not remeshed (ship C.json). Cap orphans quadified / closed all-quad; no /SH3N.
-# Rest enclosed volume V0 = 0.00038416281 m^3 (384.2 mL)
+# Rest enclosed volume V0 = 0.00038581394 m^3 (385.8 mL)
 # Free-free: no /BCS. OpenRadioss explicit inertial-relief analogue = /ADYREL (engine)
 #   + /DAMP Rayleigh mass (starter). Radioss has no PARAM,INREL (that is OptiStruct).
 #   Closed /PLOAD is self-equilibrated (net F≈0); /ADYREL+/DAMP kill residual RB drift.
@@ -59,7 +59,7 @@ film membrane N=1 Ismstr=10 QEPH Ithick=1
          1                      0.000381                 0.0                   1         0         0
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /PART/1
-letter C all-quad film (988 shells; SH3N=0)
+letter C all-quad film (986 shells; SH3N=0)
          1         1         0
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /NODE
@@ -1051,8 +1051,6 @@ letter C all-quad film (988 shells; SH3N=0)
        986   -0.00996622092477    -0.0579140805682     0.0166666666667
        987  -0.000573910712106    -0.0593666705998     0.0166666666667
        988    0.00892279350081    -0.0598915936635     0.0166666666667
-       989     0.0454030488887     0.0440351264694               0.025
-       990     0.0454030488887     0.0440351264694              -0.025
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /SHELL/1
          1       203       204       201       202
@@ -2035,14 +2033,12 @@ letter C all-quad film (988 shells; SH3N=0)
        978       455       314       263       313
        979         8        59       108        58
        980       347       298       247       297
-       981        76        26        77       989
-       982        77        27        78       989
-       983        78       183       182       989
-       984       182       188        76       989
-       985       421       427       315       990
-       986       315       265       316       990
-       987       316       266       317       990
-       988       317       422       421       990
+       981        77        27        78       183
+       982        77       183       182       188
+       983        77       188        76        26
+       984       316       422       317       266
+       985       316       427       421       422
+       986       316       265       315       427
 #---1----|----2----|----3----|----4----|----5----|----6----|----7----|----8----|----9----|---10----|
 /GRNOD/PART/1
 all film nodes (free-free; no 3-2-1 pins)
