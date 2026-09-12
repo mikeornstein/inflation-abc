@@ -8,7 +8,7 @@
     "nTris": 1972,
     "nOrphanCapTris": 96,
     "nMidTris": 0,
-    "volume_m3": 0.00038581394370395893,
+    "volume_m3": 0.0004482073788755136,
     "gates": {
       "N": 988,
       "nQuads": 986,
@@ -19,13 +19,14 @@
       "euler": 2,
       "components": 1
     },
-    "plan": "ship meshes/C.json \u2014 paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner)",
+    "plan": "ship meshes/C.json \u2014 paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner); flipped 206 inward /SHELL so +PLOAD is out of V",
     "role": "ship",
     "source": "meshes/C.json",
     "nQuads_src": 938,
-    "close": "paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner)",
+    "close": "paired orphans; even-patch ate 4 leftover tris (+0 cap Steiners; boundary fan, no Steiner); flipped 206 inward /SHELL so +PLOAD is out of V",
     "note": "locked Design-PASS bake; do not overwrite meshes/C.json",
-    "V0_mL": 385.81394370395964
+    "n_winding_flipped": 0,
+    "V0_mL": 448.2073788755131
   },
   "fine": {
     "letter": "C",
@@ -35,7 +36,7 @@
     "nTris": 7888,
     "nOrphanCapTris": 0,
     "nMidTris": 0,
-    "volume_m3": 0.00038581394370395644,
+    "volume_m3": 0.00044820737887550665,
     "gates": {
       "N": 3946,
       "nQuads": 3944,
@@ -49,9 +50,10 @@
     "plan": "linear 1-to-4 of closed all-quad ship shell (nested 2\u00d7 h; N\u00d74 on a surface)",
     "role": "fine",
     "parentN": 988,
-    "parentV0_m3": 0.00038581394370395964,
+    "parentV0_m3": 0.0004482073788755131,
     "note": "all-quad /SHELL study mesh; does not replace ship meshes/C.json",
-    "V0_mL": 385.81394370396225
+    "n_winding_flipped": 0,
+    "V0_mL": 448.20737887551064
   },
   "finer": {
     "letter": "C",
@@ -61,7 +63,7 @@
     "nTris": 0,
     "nOrphanCapTris": 0,
     "nMidTris": 0,
-    "volume_m3": 0.00038581394370397037,
+    "volume_m3": 0.00044820737887553023,
     "gates": {
       "N": 15778,
       "nQuads": 15776,
@@ -75,9 +77,10 @@
     "plan": "linear 1-to-4 of closed all-quad fine shell (nested 2\u00d7 h of fine; N=4\u00d7fine)",
     "role": "finer",
     "parentN": 3946,
-    "parentV0_m3": 0.00038581394370395644,
+    "parentV0_m3": 0.00044820737887550665,
     "note": "all-quad /SHELL study mesh; exceeds web bake MAX_VERTS; does not replace ship meshes/C.json",
-    "V0_mL": 385.8139437039704
+    "n_winding_flipped": 0,
+    "V0_mL": 448.20737887553025
   },
   "law": "LAW42 \u03bc1=MU \u03b11=2 \u03c1=1130 H0 Gapmin=CONTACT_KISS Ishell=1 /ADYREL \u2014 not retuned",
   "metrics": "Mike 2026-09-12 same-load: at ~32.5 kPa and ~35.8 kPa report N, \u03bb_max, \u03bb_aw, V, \u03a8; \u0394V\u22645% \u0394\u03bb_max\u22642% \u0394\u03bb_aw\u22642% on successive nested N; peak \u03bb_max at holes/creases is a sharp-hole singularity \u2014 do not chase with global refine. Volume/\u03bb_aw is the signal. \u03a8\u22650; contact report-only; dynamic until QS-ish; converged dynamic \u2260 ABC apples"

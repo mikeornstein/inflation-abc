@@ -489,12 +489,28 @@ def write_md(out: Path, payload: dict) -> None:
     a("")
     a("## 1) Inward vs outward")
     a("")
+    before = payload.get("before_flip")
+    if before and before.get("counts"):
+        a("### Before the side-wall flip")
+        a("")
+        a("| density | N | faces | outward | inward | degenerate | manifold same-dir | V mL (as-wound) | V mL if oriented |")
+        a("|---------|--:|------:|--------:|-------:|-----------:|------------------:|----------------:|-----------------:|")
+        for dens, rec in before["counts"].items():
+            rest = rec.get("rest") or rec.get("json_rest") or {}
+            a(
+                f"| {dens} | {rec['N']} | {rest.get('n_faces', 0)} | **{rest.get('outward', 0)}** | **{rest.get('inward', 0)}** | {rest.get('degenerate', 0)} | {rest.get('manifold_same_dir_edges', 0)} | {rest.get('V_mL', 0):.1f} | {rest.get('V_oriented_mL', 0):.1f} |"
+            )
+        a("")
+        a("All inward faces were **extrusion side-walls** (nested 1-to-4 inherited the ship patch: 206 / 824 / 3296). Those faces pushed **into** enclosed V.")
+        a("")
+        a("### After `orient_outward_closed` (this tape)")
+        a("")
     a("| density | N | faces | outward | inward | degenerate | manifold same-dir | V mL (as-wound) | V mL if oriented |")
     a("|---------|--:|------:|--------:|-------:|-----------:|------------------:|----------------:|-----------------:|")
     for dens, rec in payload["counts"].items():
-        rest = rec["rest"]
+        rest = rec.get("rest") or rec.get("json_rest") or {}
         a(
-            f"| {dens} | {rec['N']} | {rest['n_faces']} | **{rest['outward']}** | **{rest['inward']}** | {rest['degenerate']} | {rest['manifold_same_dir_edges']} | {rest['V_mL']:.1f} | {rest.get('V_oriented_mL', 0):.1f} |"
+            f"| {dens} | {rec['N']} | {rest.get('n_faces', 0)} | **{rest.get('outward', 0)}** | **{rest.get('inward', 0)}** | {rest.get('degenerate', 0)} | {rest.get('manifold_same_dir_edges', 0)} | {rest.get('V_mL', 0):.1f} | {rest.get('V_oriented_mL', 0):.1f} |"
         )
     a("")
     if payload["any_inward"]:
@@ -502,6 +518,9 @@ def write_md(out: Path, payload: dict) -> None:
     else:
         a("**Zero inward faces** on ship, fine, and finer (manifold-consistent, V>0). `/PLOAD` n agrees with the outward shell winding.")
     a("")
+    if payload.get("vtk_note"):
+        a(payload["vtk_note"])
+        a("")
     a("Glyph stills: green = +PLOAD out of enclosed V. Same camera as the C refine ladder (`az=0.55 el=0.38`). Frames are rest (`Ainflate_A001.vtk`) and the refine-ladder pressures (`A011` ≈ 32.5 kPa, `A012` ≈ 35.8 kPa).")
     a("")
     a("## 2) TYPE19 — field that actually exists")
@@ -695,6 +714,14 @@ def main(argv=None) -> int:
     any_kiss = any((contact[d].get("first_kiss") or {}).get("t") is not None for d in contact)
     history_png(series, stills / "cont_history.png", {d: contact[d].get("first_kiss") for d in contact})
 
+    before_flip = None
+    bf = out / "counts_before_flip.json"
+    if bf.exists():
+        try:
+            before_flip = json.loads(bf.read_text())
+        except json.JSONDecodeError:
+            before_flip = None
+
     payload = {
         "letter": letter,
         "convention": {
@@ -708,6 +735,12 @@ def main(argv=None) -> int:
         "contact": contact,
         "any_inward": any_inward,
         "any_kiss": any_kiss,
+        "before_flip": before_flip,
+        "vtk_note": (
+            "`anim_to_vtk` used to skip existing VTK; a shorter re-run then mixed leftover "
+            "A0xx frames. Post now drops ANIM/VTK older than the copied engine `.rad` and "
+            "reconverts when ANIM is newer."
+        ),
         "stills": [p.name for p in sorted(stills.glob("*.png"))],
         "frames": frames,
         "note": (

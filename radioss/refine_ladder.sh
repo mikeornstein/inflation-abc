@@ -33,6 +33,8 @@ run_one() {
   mkdir -p "$run"
   cp -f "$deck"/Ainflate_0000.rad "$deck"/Ainflate_0001.rad "$run"/
   cd "$run"
+  # Drop leftover ANIM/VTK/T01 from a previous engine so post cannot mix tapes.
+  rm -f AinflateA[0-9]* Ainflate_A*.vtk AinflateT01
   echo "=== ${LETTER} ${dens} starter  nt=$OMP_NUM_THREADS ==="
   starter_linux64_gf -i Ainflate_0000.rad -np 1 | tee starter.log
   echo "=== ${LETTER} ${dens} engine (timeout ${timeout_s}s) ==="

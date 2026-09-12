@@ -28,6 +28,8 @@ radioss/C-refine/**/artifacts/A-inflate.gif
 radioss/C-refine/**/artifacts/A-inflate.mp4
 radioss/C-refine/stills/*.png
 radioss/C-refine/**/artifacts/*.png
+radioss/C-refine/forks/**/Ainflate_0000.rad
+radioss/C-refine/forks/**/run/
 radioss/C-pload-proof/**/*.png
 __pycache__/
 __pycache__/
