@@ -355,6 +355,9 @@ def write_starter(
     w(header_bar())
     w("/PLOAD/1\n")
     w("internal pressure on film (positive = outward / inflate)\n")
+    # Altair 2024 /PLOAD: surf_ID fct_IDT sens_ID Ipinch Idel Itypfun Ascale_x Fscale_y
+    # Positive p acts along n = (N3-N1)×(N4-N2) on /SURF segments (shell winding).
+    w("#  surf_ID  functIDT sensor_ID    Ipinch      Idel   Itypfun            Ascale_x            Fscale_y\n")
     w(i10(SURF_ID) + i10(FUNCT_P) + i10(0) + i10(0) + i10(1) + i10(0) + r20(1.0) + r20(p_max) + "\n")
 
     w(header_bar())

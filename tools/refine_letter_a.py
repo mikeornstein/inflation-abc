@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +72,60 @@ def _vol(pos: np.ndarray, quads) -> float:
 
 def _flip_quads(quads):
     return [(q[0], q[3], q[2], q[1]) for q in quads]
+
+
+def orient_outward_closed(pos: np.ndarray, quads):
+    """Manifold-consistent winding with +PLOAD out of the enclosed volume.
+
+    A global V<0 flip is not enough: same-direction interior edges mean a
+    patch of /SHELL is reversed, so /PLOAD on those faces pushes *into* V.
+    Flood from face 0, then invert the whole mesh if signed volume is < 0.
+    Returns (quads, n_flipped).
+    """
+    pos = np.asarray(pos, dtype=float)
+    quads = [tuple(int(i) for i in q) for q in quads]
+    nq = len(quads)
+    if nq == 0:
+        return quads, 0
+    adj = defaultdict(list)
+    for fi, q in enumerate(quads):
+        for k in range(4):
+            a, b = q[k], q[(k + 1) % 4]
+            e = (a, b) if a < b else (b, a)
+            adj[e].append((fi, a, b))
+    flip = [None] * nq
+    flip[0] = 0
+    qrun = deque([0])
+    while qrun:
+        i = qrun.popleft()
+        q = quads[i]
+        for k in range(4):
+            a, b = q[k], q[(k + 1) % 4]
+            if flip[i] == 1:
+                a, b = b, a
+            e = (a, b) if a < b else (b, a)
+            for fj, aa, bb in adj[e]:
+                if fj == i:
+                    continue
+                need = 0 if (aa, bb) == (b, a) else 1
+                if flip[fj] is None:
+                    flip[fj] = need
+                    qrun.append(fj)
+                elif flip[fj] != need:
+                    pass  # non-orientable; leave as assigned
+    for i in range(nq):
+        if flip[i] is None:
+            flip[i] = 0
+    oriented = []
+    for i, q in enumerate(quads):
+        oriented.append((q[0], q[3], q[2], q[1]) if flip[i] else q)
+    V = _vol(pos, oriented)
+    if V < 0:
+        oriented = _flip_quads(oriented)
+        flip = [1 - int(f) for f in flip]
+        V = -V
+    n_flipped = int(sum(flip))
+    return oriented, n_flipped
 
 
 def extract_front_midplane(pos: np.ndarray, quads):
@@ -677,9 +731,10 @@ def close_to_all_quad(pos: np.ndarray, quads, leftover, *, want_euler: int | Non
         leftover = []
         return pos, quads, leftover, V, gates, note
     V = _vol(np.asarray(pos, dtype=float), quads)
-    if V < 0:
-        quads = _flip_quads(quads)
-        V = -V
+    quads, n_winding = orient_outward_closed(pos, quads)
+    V = _vol(np.asarray(pos, dtype=float), quads)
+    if n_winding:
+        note += f"; flipped {n_winding} inward /SHELL so +PLOAD is out of V"
     gates = MeshQuality.gate_closed_quad_shell(
         len(pos), quads, want_euler=want_euler, check_size=False
     )
@@ -697,14 +752,17 @@ def dump_bake(
     letter: str = "A",
     want_euler: int | None = 0,
 ):
-    pos0 = [float(v) for v in np.asarray(pos, dtype=float).ravel()]
+    pos_arr = np.asarray(pos, dtype=float)
+    if pos_arr.ndim == 1:
+        n = len(pos_arr) // 3
+        pos_arr = pos_arr.reshape(n, 3)
+    else:
+        n = int(pos_arr.shape[0])
+    pos0 = [float(v) for v in pos_arr.ravel()]
+    quads, n_winding = orient_outward_closed(pos_arr, quads)
     quads = [[int(i) for i in q] for q in quads]
-    n = len(pos0) // 3
     if skip_tris:
-        vol = float(_vol(np.asarray(pos0, dtype=float).reshape(n, 3), quads))
-        if vol < 0:
-            quads = [[q[0], q[3], q[2], q[1]] for q in quads]
-            vol = -vol
+        vol = float(_vol(pos_arr, quads))
         split: list = []
     else:
         split = BakeJSON.split_tris(quads)
@@ -713,6 +771,8 @@ def dump_bake(
             quads = [[q[0], q[3], q[2], q[1]] for q in quads]
             split = BakeJSON.split_tris(quads)
             vol = -vol
+            n_winding = len(quads) - n_winding
+    meta = {**meta, "n_winding_flipped": int(n_winding)}
     gates = MeshQuality.gate_closed_quad_shell(
         n, quads, want_euler=want_euler, check_size=check_size
     )

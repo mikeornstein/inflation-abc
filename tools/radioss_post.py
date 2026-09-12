@@ -336,6 +336,7 @@ def render_frame(
     rest_fill=None,
     warn_label="WARN  first λ_max ≥ 2",
     extra_edges=None,
+    face_colors=None,
 ):
     """Orthographic +Z view (or `project`), Y up. Fill + stroke **quads**."""
     w = h = size
@@ -376,7 +377,9 @@ def render_frame(
     edge = (52, 52, 60)
     beige = rest_fill if rest_fill is not None else None
     for zc, fi, q in faces:
-        if beige is not None:
+        if face_colors is not None and fi < len(face_colors):
+            col = tuple(int(c) for c in face_colors[fi])
+        elif beige is not None:
             col = beige
         else:
             lam = lams_quad[fi] if fi < len(lams_quad) else 1.0
