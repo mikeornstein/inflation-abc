@@ -39,6 +39,9 @@ from radioss_law import (
     law_card_lines,
 )
 
+LOAD_FAMILY_DYNAMIC_PLOAD_40MS = "dynamic-pload-40ms"
+SHIP_A_FINGERPRINT = "d9c56487"
+
 MESH_URL = "https://raw.githubusercontent.com/mikeornstein/inflation-abc/main/meshes/A.json"
 
 # Load path (not a constitutive retune). JS warn ~54100 Pa; ramp past that
@@ -48,6 +51,11 @@ T_RAMP = 0.040
 T_END = 0.050
 ANIM_DT = 0.002
 DAMP_ALPHA = 80.0  # 1/s  Rayleigh mass-proportional; ρ unchanged
+
+# QS-ish load-schedule defaults (not a μ/ρ retune). 10× slower than dynamic-pload-40ms.
+QS_T_RAMP = 0.400
+QS_T_END = 0.500
+QS_ANIM_DT = 0.005
 
 RUNNAME = "Ainflate"
 PART_QUAD = 1
@@ -159,6 +167,29 @@ def quadify_orphans(quads, orphans):
     return all_quads + extra, leftover
 
 
+def mesh_fingerprint(pos, quads, leftover=()) -> str:
+    """FNV-1a 32-bit over IEEE coords + connectivity (web-mbd meshA.ts)."""
+    import struct
+
+    coords = struct.pack("<" + "d" * len(pos), *[float(v) for v in pos])
+    qbytes = b"".join(struct.pack("<i", int(i)) for q in quads for i in q)
+    tbytes = b"".join(struct.pack("<i", int(i)) for t in leftover for i in t)
+    h = 0x811C9DC5
+    for b in coords + qbytes + tbytes:
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
+
+
+def load_family_tag(*, t_ramp: float, p_max: float, qs_ish: bool) -> str:
+    ms = int(round(float(t_ramp) * 1000.0))
+    if qs_ish:
+        return f"qs-ish-pload-{ms}ms"
+    if abs(float(t_ramp) - T_RAMP) < 1e-12 and abs(float(p_max) - P_MAX) < 1e-6:
+        return LOAD_FAMILY_DYNAMIC_PLOAD_40MS
+    return f"dynamic-pload-{ms}ms"
+
+
 def enclosed_volume(pos, quads, orphans) -> float:
     def tri_vol(a, b, c):
         return (
@@ -186,6 +217,9 @@ def write_starter(
     p_max: float | None = None,
     ams: bool = False,
     note: str | None = None,
+    qs_ish: bool = False,
+    load_family: str | None = None,
+    anim_dt: float | None = None,
 ) -> dict:
     n = mesh["n"]
     pos = mesh["pos"]
@@ -204,6 +238,9 @@ def write_starter(
     t_ramp = T_RAMP if t_ramp is None else float(t_ramp)
     t_end = T_END if t_end is None else float(t_end)
     p_max = P_MAX if p_max is None else float(p_max)
+    anim_dt = ANIM_DT if anim_dt is None else float(anim_dt)
+    family = load_family or load_family_tag(t_ramp=t_ramp, p_max=p_max, qs_ish=qs_ish)
+    fp = mesh_fingerprint(pos, quads, leftover)
     info = {
         "n": n,
         "nquads": len(quads),
@@ -222,9 +259,13 @@ def write_starter(
         "P_MAX": p_max,
         "T_END": t_end,
         "T_RAMP": t_ramp,
+        "ANIM_DT": anim_dt,
         "ams": bool(ams),
         "Ishell": 1,
-        "dynamic": True,
+        "dynamic": not bool(qs_ish),
+        "qs_ish": bool(qs_ish),
+        "loadFamily": family,
+        "fingerprint": fp,
         "letter": letter,
     }
 
@@ -236,6 +277,11 @@ def write_starter(
     w("# SI: kg, m, s, Pa. Do not retune μ or ρ.\n")
     if note:
         w(f"# {note}\n")
+    if qs_ish:
+        w(
+            f"# QS-ish load family {family}: slower /PLOAD + longer T_end; "
+            "same LAW42 μ/ρ/H0. Not dynamic-pload-40ms. Not a μ retune.\n"
+        )
     if ams:
         w("# Kareem CFL fork: /AMS (not /DT/NODA/CST). μ/ρ/Ishell=1 unchanged.\n")
     for ln in law_card_lines():
@@ -394,18 +440,25 @@ def write_engine(
     ams: bool = False,
     ams_tmin: float = 1.0e-4,
     noda_stop: float = 1.0e-6,
+    anim_dt: float | None = None,
+    qs_ish: bool = False,
+    load_family: str | None = None,
 ) -> None:
     t_end = T_END if t_end is None else float(t_end)
+    anim_dt = ANIM_DT if anim_dt is None else float(anim_dt)
     lines = []
     w = lines.append
     w("#RADIOSS ENGINE\n")
     w(header_bar())
+    if qs_ish:
+        fam = load_family or "qs-ish"
+        w(f"# QS-ish {fam}: slower PLOAD / longer T_end / /ADYREL. μ/ρ locked.\n")
     w(f"/RUN/{RUNNAME}/1\n")
     w(f"{t_end:g}\n")
     w("/TFILE\n")
     w("0.001\n")
     w("/ANIM/DT\n")
-    w(f"0.0 {ANIM_DT:g}\n")
+    w(f"0.0 {anim_dt:g}\n")
     w("/ANIM/VECT/DISP\n")
     w("/ANIM/VECT/CONT\n")
     w("/ANIM/ELEM/ENER\n")
@@ -432,6 +485,20 @@ def write_engine(
 
 def write_law_card(path: Path, info: dict) -> None:
     ams = bool(info.get("ams"))
+    qs_ish = bool(info.get("qs_ish"))
+    family = info.get("loadFamily") or load_family_tag(
+        t_ramp=float(info["T_RAMP"]), p_max=float(info["P_MAX"]), qs_ish=qs_ish
+    )
+    if qs_ish:
+        load_line = (
+            f"  load    = {family}  (QS-ish slower /PLOAD; same LAW42 μ/ρ/H0 as "
+            f"{LOAD_FAMILY_DYNAMIC_PLOAD_40MS}; not ABC dead-pressure; not a μ retune)"
+        )
+    else:
+        load_line = (
+            f"  load    = {family}  (dynamic PLOAD ramp, not Chiron QS, "
+            "until a QS-ish tape exists)"
+        )
     lines = law_card_lines() + [
         "",
         "Contact / load",
@@ -446,7 +513,8 @@ def write_law_card(path: Path, info: dict) -> None:
         f"  V0      = {info['V0_m3']:.8g} m^3",
         f"  mesh    = N={info['n']}  /SHELL={info['nquads']}  /SH3N=0  "
         f"(source quads={info['nquads_src']} orphan faceTris={info['norphans_src']} paired)",
-        "  load    = dynamic PLOAD ramp (not Chiron QS) until a QS-ish tape exists",
+        f"  fingerprint = {info.get('fingerprint', '')}",
+        load_line,
     ]
     path.write_text("\n".join(lines) + "\n")
 
@@ -456,13 +524,16 @@ def write_deck_meta(path: Path, info: dict) -> None:
         "P_MAX": info["P_MAX"],
         "T_RAMP": info["T_RAMP"],
         "T_END": info["T_END"],
-        "ANIM_DT": ANIM_DT,
+        "ANIM_DT": info.get("ANIM_DT", ANIM_DT),
         "RUNNAME": RUNNAME,
         "ams": bool(info.get("ams")),
         "ams_tmin": info.get("ams_tmin"),
         "noda_stop": info.get("noda_stop"),
         "Ishell": 1,
-        "dynamic": True,
+        "dynamic": not bool(info.get("qs_ish")),
+        "qs_ish": bool(info.get("qs_ish")),
+        "loadFamily": info.get("loadFamily"),
+        "fingerprint": info.get("fingerprint"),
         "letter": info.get("letter", "A"),
         "n": info["n"],
         "nquads": info["nquads"],
@@ -472,6 +543,14 @@ def write_deck_meta(path: Path, info: dict) -> None:
         "RHO": RHO,
         "H0": H0,
         "Gapmin": CONTACT_KISS,
+        "rayleighAlpha": DAMP_ALPHA,
+        "alpha1": ALPHA1,
+        "nu": NU,
+        "pronyM": PRONY_M,
+        "iform": 1,
+        "ismstr": 10,
+        "ithick": 1,
+        "warnLam": WARN_LAM,
     }
     path.write_text(json.dumps(meta, indent=2) + "\n")
 
@@ -511,6 +590,24 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--t-ramp", type=float, default=None, help="PLOAD ramp duration (s); default 0.04")
     ap.add_argument("--t-end", type=float, default=None, help="engine T_END (s); default 0.05")
+    ap.add_argument("--p-max", type=float, default=None, help="PLOAD Fscale (Pa); default 65000")
+    ap.add_argument(
+        "--anim-dt",
+        type=float,
+        default=None,
+        help="engine /ANIM/DT interval (s); default 0.002 (QS-ish default 0.005)",
+    )
+    ap.add_argument(
+        "--qs-ish",
+        action="store_true",
+        help="QS-ish load family: slower PLOAD / longer T_end / labeled qs-ish-pload-…ms. μ/ρ locked.",
+    )
+    ap.add_argument(
+        "--load-family",
+        type=str,
+        default=None,
+        help="override load-family tag (default derived from --qs-ish / t-ramp)",
+    )
     ap.add_argument("--note", type=str, default=None, help="extra starter comment line")
     args = ap.parse_args(argv)
 
@@ -526,25 +623,46 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
 
+    t_ramp = args.t_ramp
+    t_end = args.t_end
+    anim_dt = args.anim_dt
+    p_max = args.p_max
+    if args.qs_ish:
+        if t_ramp is None:
+            t_ramp = QS_T_RAMP
+        if t_end is None:
+            t_end = QS_T_END
+        if anim_dt is None:
+            anim_dt = QS_ANIM_DT
+        if p_max is None:
+            p_max = P_MAX
+
     starter = args.out_dir / f"{RUNNAME}_0000.rad"
     engine = args.out_dir / f"{RUNNAME}_0001.rad"
     info = write_starter(
         mesh,
         starter,
-        t_ramp=args.t_ramp,
-        t_end=args.t_end,
+        t_ramp=t_ramp,
+        t_end=t_end,
+        p_max=p_max,
         ams=args.ams,
         note=args.note,
+        qs_ish=args.qs_ish,
+        load_family=args.load_family,
+        anim_dt=anim_dt,
     )
     info["noda_stop"] = float(args.noda_stop)
     if args.ams:
         info["ams_tmin"] = float(args.ams_tmin)
     write_engine(
         engine,
-        t_end=args.t_end,
+        t_end=t_end,
         ams=args.ams,
         ams_tmin=args.ams_tmin,
         noda_stop=args.noda_stop,
+        anim_dt=anim_dt,
+        qs_ish=args.qs_ish,
+        load_family=info.get("loadFamily"),
     )
     write_law_card(args.out_dir / "law-card.txt", info)
     write_deck_meta(args.out_dir / "deck-meta.json", info)
@@ -552,7 +670,8 @@ def main(argv=None) -> int:
     print(f"wrote {engine}")
     print(f"μ1={MU:.8g} α1={ALPHA1} H0={H0:.8g} ν={NU} ρ={RHO} Gapmin={CONTACT_KISS:.8g}")
     print(f"deck /SHELL={info['nquads']} /SH3N=0  IR={info['ir']}  AMS={info['ams']}")
-    print(f"V0={info['V0_m3']*1e6:.4g} mL")
+    print(f"loadFamily={info['loadFamily']}  T_RAMP={info['T_RAMP']}  T_END={info['T_END']}")
+    print(f"V0={info['V0_m3']*1e6:.4g} mL  fingerprint={info['fingerprint']}")
     if args.check:
         text = starter.read_text()
         eng = engine.read_text()
@@ -575,9 +694,13 @@ def main(argv=None) -> int:
             assert not any(ln.startswith("/AMS") for ln in text.splitlines())
         if not args.allow_n and letter == "A":
             assert info["nquads"] == 1554, info["nquads"]
+            assert info["fingerprint"] == SHIP_A_FINGERPRINT, info["fingerprint"]
         assert info["nsh3n"] == 0
         assert abs(MU - (800.0 * 6894.757) / 1.75) < 1e-6
         assert RHO == 1130.0
+        if args.qs_ish:
+            assert str(info["loadFamily"]).startswith("qs-ish-"), info["loadFamily"]
+            assert "QS-ish" in text
         print("check ok")
     return 0
 

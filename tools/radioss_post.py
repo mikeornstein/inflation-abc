@@ -22,8 +22,17 @@ _TOOLS = Path(__file__).resolve().parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-from mesh_to_radioss import ANIM_DT, P_MAX, T_RAMP, RUNNAME, load_mesh, quadify_orphans
-from radioss_law import CONTACT_KISS, H0, MU, RHO, WARN_LAM, law_card_lines
+from mesh_to_radioss import (
+    ANIM_DT,
+    LOAD_FAMILY_DYNAMIC_PLOAD_40MS,
+    P_MAX,
+    RUNNAME,
+    SHIP_A_FINGERPRINT,
+    T_RAMP,
+    load_mesh,
+    quadify_orphans,
+)
+from radioss_law import ALPHA1, CONTACT_KISS, H0, MU, NU, PRONY_M, RHO, WARN_LAM, law_card_lines
 
 
 def _finite_or_none(v):
@@ -564,16 +573,41 @@ def lambda_field_stats(X, x, quads):
     }
 
 
-def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None, title=None):
+def write_run_md(
+    path: Path,
+    rows,
+    warn_row,
+    blockers,
+    extra,
+    mesh_note=None,
+    title=None,
+    meta=None,
+):
+    meta = meta or {}
+    p_max = float(meta.get("P_MAX", P_MAX))
+    t_ramp = float(meta.get("T_RAMP", T_RAMP))
+    t_end = float(meta.get("T_END", 0.05))
+    qs_ish = bool(meta.get("qs_ish"))
+    family = meta.get("loadFamily") or (
+        f"qs-ish-pload-{int(round(t_ramp * 1000))}ms" if qs_ish else LOAD_FAMILY_DYNAMIC_PLOAD_40MS
+    )
     lines = [title or "# A-inflate first light — RUN", ""]
     lines.append("Cloud VM job. OpenRadioss linux64_gf (`latest-20260728`). SI deck. **μ and ρ not retuned.**")
     lines.append("")
+    if qs_ish:
+        lines.append(
+            f"**Load family `{family}`** — QS-ish slower `/PLOAD` + `/ADYREL`. "
+            f"Not `{LOAD_FAMILY_DYNAMIC_PLOAD_40MS}` (that tape first λ≥2 at ~36 kPa). "
+            "Not a μ/ρ retune."
+        )
+        lines.append("")
     lines.append("## Law card dump")
     lines.append("```")
     lines.extend(law_card_lines())
     lines.append("  /PROP   N=1  Ismstr=10  Ishell=1 (Belytschko)  Ithick=1")
     lines.append("  /INTER/TYPE19  Igap=4  Irem_gap=2  Inacti=6  Gapmin=CONTACT_KISS")
-    lines.append("  /PLOAD  0 → 65000 Pa in 0.04 s (not MONVOL)")
+    lines.append(f"  /PLOAD  0 → {p_max:g} Pa in {t_ramp:g} s, hold to {t_end:g} s (not MONVOL)")
+    lines.append(f"  loadFamily = {family}")
     lines.append("```")
     lines.append("")
     lines.append("## Quad-only (no triangle bleed)")
@@ -606,14 +640,52 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None, ti
         )
         lines.append(f"- t = **{warn_row['t']:.5g} s**")
         lines.append(f"- λ_max = **{warn_row['lam_max']:.4g}**")
-        lines.append(
-            f"- p = **{warn_row['p_Pa']:.0f} Pa** (PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium)"
-        )
+        if qs_ish:
+            p_note = (
+                f"PLOAD ramp `{family}`; **QS-ish** (target ABC warn class ~54100 Pa). "
+                f"Dynamic `{LOAD_FAMILY_DYNAMIC_PLOAD_40MS}` first λ≥2 was ~35769 Pa."
+            )
+        else:
+            p_note = (
+                "PLOAD ramp; **dynamic**, not Chiron QS — JS warn was ~54100 Pa at equilibrium"
+            )
+        lines.append(f"- p = **{warn_row['p_Pa']:.0f} Pa** ({p_note})")
         lines.append(f"- V = **{warn_row['V_mL']:.4g} mL**")
+        lines.append(f"- Ψ = **{warn_row['Psi_J']:.4g} J**")
+        if meta.get("fingerprint"):
+            lines.append(f"- mesh fingerprint = `{meta['fingerprint']}`")
         lines.append("- Overlay: `WARN  first λ_max ≥ 2`")
     else:
         lines.append("- **not reached** in this run (see blockers / last frame below).")
     lines.append("")
+    if qs_ish:
+        lines.append("## Load family vs dynamic")
+        lines.append("")
+        lines.append("| | dynamic-pload-40ms | this tape |")
+        lines.append("|---|---:|---:|")
+        lines.append(f"| loadFamily | `dynamic-pload-40ms` | `{family}` |")
+        lines.append("| /PLOAD | 0→65000 Pa in 0.04 s | "
+                     f"0→{p_max:g} Pa in {t_ramp:g} s |")
+        lines.append("| μ₁ / ρ / H0 | locked | **same lock** (not retuned) |")
+        lines.append("| /ADYREL | yes | yes |")
+        if warn_row:
+            lines.append(
+                f"| first λ≥2 p | 35769 Pa | **{warn_row['p_Pa']:.0f} Pa** |"
+            )
+            lines.append(
+                f"| first λ≥2 λ_max | 2.1404 | **{warn_row['lam_max']:.4g}** |"
+            )
+            lines.append(
+                f"| first λ≥2 V | 901.8 mL | **{warn_row['V_mL']:.4g} mL** |"
+            )
+        lines.append("")
+        lines.append(
+            "Do not mix families in one Themis table. web-mbd `compare:inflate` stays "
+            "the dynamic gate. This golden is for `compare:inflate:qs` after Daedalus "
+            "accepts the load-family tag (today the toy lock is `qs-ish-dead-pressure` "
+            "with pMax=54100, tRamp=0 — ingest notes in README)."
+        )
+        lines.append("")
     lines.append("## Correctness tape")
     lines.append("")
     lines.append("λ from CST membrane principals on ANIM/VTK (rest = frame 0). Ψ = Σ ½ μ (I1−3) H0 A0, λ3=1/(λ1 λ2).")
@@ -652,9 +724,107 @@ def write_run_md(path: Path, rows, warn_row, blockers, extra, mesh_note=None, ti
     lines.append("")
     lines.append("- `artifacts/A-inflate.gif` / `A-inflate.mp4` — rest → past first λ≥2 (warn frame labeled)")
     lines.append("- `artifacts/warn-lambda2.png` (or `last-frame.png` if λ<2)")
-    lines.append("- `artifacts/metrics.csv`")
+    lines.append("- `artifacts/metrics.csv` / `metrics.json` / `warn.json`")
+    if qs_ish:
+        lines.append("- `artifacts/inflate-a-radioss-qs-golden.json` — freeze-frame golden for web-mbd `compare:inflate:qs`")
     lines.append("- `law-card.txt`")
     path.write_text("\n".join(lines) + "\n")
+
+
+def write_golden_json(path: Path, *, meta: dict, rows: list, warn_row, quads_n: int, tris_n: int) -> dict:
+    """web-mbd-shaped freeze-frame golden (offline OpenRadioss; AGPL solver not shipped)."""
+    qs_ish = bool(meta.get("qs_ish"))
+    t_ramp = float(meta.get("T_RAMP", T_RAMP))
+    p_max = float(meta.get("P_MAX", P_MAX))
+    family = meta.get("loadFamily") or (
+        f"qs-ish-pload-{int(round(t_ramp * 1000))}ms" if qs_ish else LOAD_FAMILY_DYNAMIC_PLOAD_40MS
+    )
+    fp = meta.get("fingerprint") or SHIP_A_FINGERPRINT
+    rest = rows[0] if rows else None
+    status = "filled" if warn_row is not None else "EMPTY"
+    p_warn = float(warn_row["p_Pa"]) if warn_row is not None else None
+    neighborhood = None
+    if p_warn is not None:
+        neighborhood = {
+            "abc_qs_Pa": 54100.0,
+            "rel_vs_abc": abs(p_warn - 54100.0) / 54100.0,
+            "dynamic_pload_40ms_Pa": 35769.0,
+        }
+    golden = {
+        "status": status,
+        "loadFamily": family,
+        "provenance": {
+            "source": "openradioss" if warn_row is not None else "none",
+            "desk": "inflation-abc radioss/A-inflate-qs-ish" if qs_ish else "radioss/A-inflate",
+            "branch": "cursor/openradioss-a-qs-ish-b1bc",
+            "note": (
+                "Offline OpenRadioss linux64_gf latest-20260728. AGPL solver is not shipped. "
+                f"Load family {family}: /PLOAD 0→{p_max:g} Pa in {t_ramp:g} s + /ADYREL. "
+                "Same LAW42 μ₁=(800×6894.757)/1.75, α₁=2, ρ=1130, H0, Gapmin=CONTACT_KISS. "
+                f"Not {LOAD_FAMILY_DYNAMIC_PLOAD_40MS} (p@λ≥2 ≈ 36 kPa). Do not retune μ or ρ. "
+                "QS-ish = slower load schedule, not a true static / implicit solve. "
+                "No punch-through claim without evidence."
+            ),
+        },
+        "law": {
+            "mu1": MU,
+            "alpha1": ALPHA1,
+            "muOthers": 0,
+            "nu": NU,
+            "pronyM": PRONY_M,
+            "iform": 1,
+            "h0": H0,
+            "rho": RHO,
+            "gapMin": CONTACT_KISS,
+            "warnLam": WARN_LAM,
+            "ishell": 1,
+            "ismstr": 10,
+            "ithick": 1,
+            "loadFamily": family,
+            "pMax": p_max,
+            "tRamp": t_ramp,
+            "rayleighAlpha": float(meta.get("rayleighAlpha", 80)),
+        },
+        "mesh": {
+            "nNodes": int(meta.get("n", 1554)),
+            "nShellQuads": int(quads_n),
+            "NUMELC": int(quads_n),
+            "NUMELTG": int(tris_n),
+            "fingerprint": fp,
+            "source": (
+                "mikeornstein/inflation-abc meshes/A.json Design-PASS quad "
+                "(orphan 28 paired → 14 quads at convert time)"
+            ),
+        },
+        "bands": {
+            "lambdaRel": 0.02,
+            "volumeRel": 0.05,
+            "pressureRel": 0.05,
+        },
+        "psiNonNegative": bool(rows) and all(r["Psi_J"] >= -1e-8 for r in rows),
+        "punchThrough": bool(warn_row["punch"]) if warn_row is not None else None,
+        "vs_abc_qs": neighborhood,
+    }
+    if rest is not None:
+        golden["rest"] = {
+            "frame": rest["frame"],
+            "t": rest["t"],
+            "lambdaMax": rest["lam_max"],
+            "p": rest["p_Pa"],
+            "volume_mL": rest["V_mL"],
+            "psi_J": rest["Psi_J"],
+        }
+    if warn_row is not None:
+        golden["warn"] = {
+            "frame": warn_row["frame"],
+            "t": warn_row["t"],
+            "lambdaMax": warn_row["lam_max"],
+            "p": warn_row["p_Pa"],
+            "volume_mL": warn_row["V_mL"],
+            "psi_J": warn_row["Psi_J"],
+        }
+    path.write_text(json.dumps(_json_safe(golden), indent=2) + "\n")
+    return golden
 
 
 def scan_logs(run_dir: Path):
@@ -731,6 +901,7 @@ def main(argv=None) -> int:
             + scan_logs(args.run_dir),
             [],
             title=title,
+            meta=meta,
         )
         return 2
 
@@ -833,18 +1004,29 @@ def main(argv=None) -> int:
     stop_fired = any("NODA/STOP" in b or "NODAL TIME STEP LESS" in b for b in blockers_early)
     cfl_before = warn_row is None and stop_fired
     cfl_after = warn_row is not None and stop_fired
+    qs_ish = bool(meta.get("qs_ish"))
+    family = meta.get("loadFamily") or (
+        f"qs-ish-pload-{int(round(t_ramp * 1000))}ms" if qs_ish else LOAD_FAMILY_DYNAMIC_PLOAD_40MS
+    )
     warn_payload = {
         "reached_lambda2": warn_row is not None,
         "cfl_before_lambda2": bool(cfl_before),
         "cfl_after_lambda2": bool(cfl_after),
-        "dynamic": True,
+        "dynamic": not qs_ish,
+        "qs_ish": qs_ish,
+        "loadFamily": family,
         "ams": ams,
         "n_quads": len(quads),
         "n_tris": len(orphans),
         "Ishell": 1,
         "MU": MU,
         "RHO": RHO,
-        "label": "dynamic PLOAD + /ADYREL (not Chiron QS; converged dynamic ≠ ABC apples)",
+        "fingerprint": meta.get("fingerprint") or SHIP_A_FINGERPRINT,
+        "label": (
+            f"{family} slower PLOAD + /ADYREL (QS-ish; not {LOAD_FAMILY_DYNAMIC_PLOAD_40MS})"
+            if qs_ish
+            else "dynamic PLOAD + /ADYREL (not Chiron QS; converged dynamic ≠ ABC apples)"
+        ),
         "metrics_only": metrics_only,
     }
     src = warn_row or (rows[-1] if rows else None)
@@ -905,10 +1087,23 @@ def main(argv=None) -> int:
         f"(not NODA/CST). {'/AMS on (Kareem fork).' if ams else 'No /AMS on this tape.'}"
     )
     extra.append("Working PROP: Belytschko Ishell=1, Ismstr=10, N=1. μ and ρ unchanged.")
-    extra.append(
-        "Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. "
-        "Quality PASS desk; converged dynamic ≠ ABC apples claim vs Chiron QS."
-    )
+    if qs_ish:
+        extra.append(
+            f"Tape is **QS-ish** `{family}`: slower `/PLOAD` 0→{p_max:g} Pa in {t_ramp:g} s "
+            f"+ `/ADYREL`. Distinct from `{LOAD_FAMILY_DYNAMIC_PLOAD_40MS}` (first λ≥2 ≈ 36 kPa). "
+            "Not a true implicit static solve. Do not retune μ."
+        )
+        if warn_row is not None:
+            rel_abc = abs(warn_row["p_Pa"] - 54100.0) / 54100.0
+            extra.append(
+                f"At first λ≥2: p={warn_row['p_Pa']:.0f} Pa vs ABC QS ~54100 Pa "
+                f"(rel {100*rel_abc:.1f}%) and vs dynamic 35769 Pa."
+            )
+    else:
+        extra.append(
+            "Tape is **dynamic** PLOAD+/ADYREL until a QS-ish run exists. "
+            "Quality PASS desk; converged dynamic ≠ ABC apples claim vs Chiron QS."
+        )
     if metrics_only:
         extra.append(
             "Post is **metrics-only**: contact gap skipped (report-only anyway); "
@@ -918,6 +1113,17 @@ def main(argv=None) -> int:
         extra.append(f"ANIM still contains {len(orphans)} triangle cells — GIF may show tri bleed.")
     if not metrics_only and not gif.exists() and not mp4.exists():
         extra.append("ffmpeg GIF/MP4 encode failed — PNG frames are in artifacts/frames/")
+    golden_name = (
+        "inflate-a-radioss-qs-golden.json" if qs_ish else "inflate-a-radioss-golden.json"
+    )
+    write_golden_json(
+        art / golden_name,
+        meta=meta,
+        rows=rows,
+        warn_row=warn_row,
+        quads_n=len(quads),
+        tris_n=len(orphans),
+    )
     write_run_md(
         args.deck_dir / "RUN.md",
         rows,
@@ -926,6 +1132,7 @@ def main(argv=None) -> int:
         extra,
         mesh_note=f"{len(quads)} quads, {len(orphans)} tris",
         title=title,
+        meta=meta,
     )
     print(f"wrote {args.deck_dir / 'RUN.md'}")
     print(f"warn frame: {warn_row['frame'] if warn_row else 'NOT REACHED'}")
