@@ -1,0 +1,67 @@
+{
+  "status": "EMPTY",
+  "loadFamily": "qs-ish-dead-pressure",
+  "provenance": {
+    "source": "none",
+    "desk": "inflation-abc radioss/A-inflate-qs-ish",
+    "branch": "cursor/openradioss-a-qs-ish-b1bc",
+    "note": "NOT a vend golden. Dead p=54100 Pa /PLOAD 1 ms step CFL-explodes: frame 1 already \u03bb_max=5.21, V=3827 mL. \u03bb=2 crossing is between ANIM frames on a blow-up. Vendor radioss/A-inflate-qs-ish/inflate-a-radioss-qs-golden.json (qs-ish-pload-400ms) instead. Do not retune \u03bc."
+  },
+  "law": {
+    "mu1": 3151888.9142857143,
+    "alpha1": 2.0,
+    "muOthers": 0,
+    "nu": 0.495,
+    "pronyM": 0,
+    "iform": 1,
+    "h0": 0.000381,
+    "rho": 1130.0,
+    "gapMin": 0.000762,
+    "warnLam": 2.0,
+    "ishell": 1,
+    "ismstr": 10,
+    "ithick": 1,
+    "loadFamily": "qs-ish-dead-pressure",
+    "pMax": 54100.0,
+    "tRamp": 0.001,
+    "rayleighAlpha": 80.0
+  },
+  "mesh": {
+    "nNodes": 1554,
+    "nShellQuads": 1554,
+    "NUMELC": 1554,
+    "NUMELTG": 0,
+    "fingerprint": "d9c56487",
+    "source": "mikeornstein/inflation-abc meshes/A.json Design-PASS quad (orphan 28 paired \u2192 14 quads at convert time)"
+  },
+  "bands": {
+    "lambdaRel": 0.02,
+    "volumeRel": 0.05,
+    "pressureRel": 0.05
+  },
+  "psiNonNegative": true,
+  "punchThrough": false,
+  "vs_abc_qs": {
+    "abc_qs_Pa": 54100.0,
+    "rel_vs_abc": 0.0,
+    "dynamic_pload_40ms_Pa": 35769.0
+  },
+  "rest": {
+    "frame": 0,
+    "t": 0.0,
+    "lambdaMax": 1.0000000074505808,
+    "p": 0.0,
+    "volume_mL": 353.9850907624147,
+    "psi_J": 0.0
+  },
+  "warn": {
+    "frame": 1,
+    "t": 0.0020015,
+    "lambdaMax": 5.212898454122863,
+    "p": 54100.0,
+    "volume_mL": 3826.819923536162,
+    "psi_J": 126.50976357602028
+  },
+  "doNotVendor": true,
+  "validFirstLambda2": false
+}
