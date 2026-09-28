@@ -1,0 +1,77 @@
+{
+  "status": "filled",
+  "loadFamily": "qs-ish-pload-400ms",
+  "provenance": {
+    "source": "openradioss",
+    "desk": "inflation-abc radioss/A-inflate-qs-ish",
+    "branch": "cursor/openradioss-a-qs-ish-b1bc",
+    "note": "Offline OpenRadioss linux64_gf latest-20260728. AGPL solver is not shipped. Load family qs-ish-pload-400ms: /PLOAD 0→65000 Pa in 0.4 s + /ADYREL. Same LAW42 μ₁=(800×6894.757)/1.75, α₁=2, ρ=1130, H0, Gapmin=CONTACT_KISS. Not dynamic-pload-40ms (p@λ≥2 ≈ 35769 Pa). QS-ish freeze: t=0.170 s, λ_max=2.327, p=27625 Pa, V=752.6 mL, Ψ=8.043 J≥0. ABC QS ~54100 Pa is not a load-schedule result on this film (10× slower PLOAD moved p@λ≥2 down, not up). Dead p=54100 Pa fork CFL-explodes. Do not retune μ or ρ. No punch-through claim at the warn frame (V>0, punch=false; post-warn CFL collapse is not that claim)."
+  },
+  "law": {
+    "mu1": 3151888.9142857143,
+    "alpha1": 2.0,
+    "muOthers": 0,
+    "nu": 0.495,
+    "pronyM": 0,
+    "iform": 1,
+    "h0": 0.000381,
+    "rho": 1130.0,
+    "gapMin": 0.000762,
+    "warnLam": 2.0,
+    "ishell": 1,
+    "ismstr": 10,
+    "ithick": 1,
+    "loadFamily": "qs-ish-pload-400ms",
+    "pMax": 65000.0,
+    "tRamp": 0.4,
+    "rayleighAlpha": 80.0
+  },
+  "mesh": {
+    "nNodes": 1554,
+    "nShellQuads": 1554,
+    "NUMELC": 1554,
+    "NUMELTG": 0,
+    "fingerprint": "d9c56487",
+    "source": "mikeornstein/inflation-abc meshes/A.json Design-PASS quad (orphan 28 paired \u2192 14 quads at convert time)"
+  },
+  "bands": {
+    "lambdaRel": 0.02,
+    "volumeRel": 0.05,
+    "pressureRel": 0.05
+  },
+  "psiNonNegative": true,
+  "punchThrough": false,
+  "vs_abc_qs": {
+    "abc_qs_Pa": 54100.0,
+    "rel_vs_abc": 0.4893685304990758,
+    "dynamic_pload_40ms_Pa": 35769.0,
+    "neighborhood": false,
+    "blocker": "Slower PLOAD moved p@λ≥2 downward (35769 → 27625 Pa), away from ABC ~54100 Pa. Reaching 54 kPa at first λ_max≥2 on this LAW42 film would require less stretch at a given p (a μ/kinematics change), which is forbidden. Dead p=54100 Pa fork CFL-explodes (λ 1→5.21 in 2 ms). Do not invent μ."
+  },
+  "lambda_field": {
+    "lam_max": 2.327123518375924,
+    "lam_min": 1.106456470814378,
+    "lam_mean": 1.334598827666695,
+    "lam_aw_mean": 1.3300863503029836,
+    "lam_p50": 1.3005657362511096,
+    "lam_p90": 1.493990829147283,
+    "lam_p99": 1.8360316762216613,
+    "n_quads": 1554
+  },
+  "rest": {
+    "frame": 0,
+    "t": 0.0,
+    "lambdaMax": 1.0000000074505808,
+    "p": 0.0,
+    "volume_mL": 353.9850907624147,
+    "psi_J": 0.0
+  },
+  "warn": {
+    "frame": 34,
+    "t": 0.170001,
+    "lambdaMax": 2.327123518375924,
+    "p": 27625.1625,
+    "volume_mL": 752.6256176704242,
+    "psi_J": 8.042896684001748
+  }
+}

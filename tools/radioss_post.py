@@ -763,7 +763,8 @@ def write_golden_json(path: Path, *, meta: dict, rows: list, warn_row, quads_n: 
                 "Same LAW42 μ₁=(800×6894.757)/1.75, α₁=2, ρ=1130, H0, Gapmin=CONTACT_KISS. "
                 f"Not {LOAD_FAMILY_DYNAMIC_PLOAD_40MS} (p@λ≥2 ≈ 36 kPa). Do not retune μ or ρ. "
                 "QS-ish = slower load schedule, not a true static / implicit solve. "
-                "No punch-through claim without evidence."
+                "ABC QS ~54100 Pa is not a load-schedule result on this film "
+                "(slower PLOAD moves p@λ≥2 down, not up). No punch-through claim without evidence."
             ),
         },
         "law": {
